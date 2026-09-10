@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'data/initial_employees.dart';
 import 'models/employee.dart';
 import 'models/payroll_record.dart';
+import 'services/api_service.dart';
 import 'services/image_saver.dart';
 import 'services/payroll_engine.dart';
 
@@ -20,7 +21,7 @@ class SignaturePayrollApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Signature Payroll',
+      title: 'Signature Payroll Suite',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -51,34 +52,67 @@ class PayrollMainScreen extends StatefulWidget {
 class _PayrollMainScreenState extends State<PayrollMainScreen> {
   int _currentTab = 0;
 
-  // Key for capturing the payslip as an image
   final GlobalKey _payslipKey = GlobalKey();
   bool _isExportingImage = false;
+  bool _isApiOnline = false;
 
-  // List of employees (starts with 31 from Excel)
   late List<Employee> _employees;
-
-  // Current period and filter
+  List<String> _periods = ['2025-01'];
   String _selectedPeriod = '2025-01';
-  String _selectedGroupFilter = 'All Groups'; // 'All Groups', 'Date : 1', 'Date : 10', 'Date : 20'
+  String _selectedGroupFilter = 'All Groups';
 
-  // Payroll records map (key: epCode)
   Map<String, PayrollRecord> _payrollRecords = {};
+  List<Map<String, dynamic>> _attendanceLogs = [];
+  List<Map<String, dynamic>> _adjustments = [];
 
-  // Selected employee for payslip view
   String? _selectedPayslipEp;
 
   @override
   void initState() {
     super.initState();
     _employees = List.from(initialEmployees);
-    _recalculatePayroll();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    // 1. Check API Connection
+    final connected = await ApiService.checkConnection();
+    setState(() => _isApiOnline = connected);
+
+    // 2. Fetch all 24 periods from Database
+    final fetchedPeriods = await ApiService.fetchPeriods();
+    if (fetchedPeriods.isNotEmpty) {
+      setState(() {
+        _periods = fetchedPeriods;
+        if (!_periods.contains(_selectedPeriod)) {
+          _selectedPeriod = _periods.first;
+        }
+      });
+    }
+
+    // 3. Fetch Employees from Database
+    final dbEmployees = await ApiService.fetchEmployees();
+    if (dbEmployees != null && dbEmployees.isNotEmpty) {
+      setState(() => _employees = dbEmployees);
+    }
+
     if (_employees.isNotEmpty) {
       _selectedPayslipEp = _employees.first.epCode;
     }
+
+    await _fetchDataAndRecalculate();
   }
 
-  void _recalculatePayroll() {
+  Future<void> _fetchDataAndRecalculate() async {
+    // Fetch real attendance and adjustments for this period
+    final att = await ApiService.fetchAttendance(period: _selectedPeriod);
+    final adj = await ApiService.fetchAdjustments(period: _selectedPeriod);
+
+    setState(() {
+      _attendanceLogs = att;
+      _adjustments = adj;
+    });
+
     final Map<String, PayrollRecord> newRecords = {};
     for (final emp in _employees) {
       final rec = PayrollEngine.calculateEmployeeRecord(
@@ -86,22 +120,54 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         period: _selectedPeriod,
       );
       if (rec != null) {
+        // Aggregate real attendance logs
+        final empAtt = _attendanceLogs.where((a) => a['ep_code'] == emp.epCode).toList();
+        if (empAtt.isNotEmpty) {
+          rec.dayOff = empAtt.where((a) => a['category'] == 'Day-off').length;
+          rec.sickLeave = empAtt.where((a) => a['category'] == 'Sick').length;
+          rec.halfDays = empAtt.where((a) => a['category'] == 'Half-day').length;
+          rec.otDays = empAtt.where((a) => a['category'] == 'OT Days').length;
+        }
+
+        // Aggregate real adjustments
+        final empAdj = _adjustments.where((a) => a['ep_code'] == emp.epCode).toList();
+        for (final a in empAdj) {
+          final amt = (a['amount'] as num?)?.toDouble() ?? 0.0;
+          final cat = a['category']?.toString() ?? '';
+          final type = a['type']?.toString() ?? '';
+
+          if (type == 'Income') {
+            if (cat.contains('OT')) {
+              rec.overtimePay += amt;
+            } else if (cat.contains('Bonus')) {
+              rec.bonusPay += amt;
+            } else {
+              rec.otherExtra += amt;
+            }
+          } else {
+            if (cat.contains('Advance')) {
+              rec.advanceDeduction += amt;
+            } else if (cat.contains('Work Permit') || cat.contains('Passport')) {
+              rec.workPermitDeduction += amt;
+            } else {
+              rec.otherDeduction += amt;
+            }
+          }
+        }
+
+        // Keep local overrides if any
         if (_payrollRecords.containsKey(emp.epCode)) {
           final old = _payrollRecords[emp.epCode]!;
-          rec.workDays = old.workDays;
-          rec.dayOff = old.dayOff;
-          rec.sickLeave = old.sickLeave;
-          rec.halfDays = old.halfDays;
-          rec.otDays = old.otDays;
-          rec.overtimePay = old.overtimePay;
-          rec.bonusPay = old.bonusPay;
-          rec.otherExtra = old.otherExtra;
-          rec.extraNote = old.extraNote;
-          rec.advanceDeduction = old.advanceDeduction;
-          rec.workPermitDeduction = old.workPermitDeduction;
-          rec.otherDeduction = old.otherDeduction;
-          rec.deductionNote = old.deductionNote;
+          if (empAdj.isEmpty) {
+            rec.overtimePay = old.overtimePay;
+            rec.bonusPay = old.bonusPay;
+            rec.otherExtra = old.otherExtra;
+            rec.advanceDeduction = old.advanceDeduction;
+            rec.workPermitDeduction = old.workPermitDeduction;
+            rec.otherDeduction = old.otherDeduction;
+          }
         }
+
         newRecords[emp.epCode] = rec;
       }
     }
@@ -117,7 +183,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     }).toList();
   }
 
-  // Save payslip as PNG image
   Future<void> _savePayslipAsImage(PayrollRecord record) async {
     setState(() => _isExportingImage = true);
     try {
@@ -173,22 +238,39 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               child: const Icon(Icons.diamond_outlined, size: 20, color: Colors.white),
             ),
             const SizedBox(width: 12),
-            const Column(
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'SIGNATURE PAYROLL',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                 ),
-                Text(
-                  'Smart Prorate & Payroll Management Suite',
-                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _isApiOnline ? const Color(0xFF10B981) : Colors.amber,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      _isApiOnline ? 'REST API Database Connected' : 'Local Standalone Mode',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: _isApiOnline ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ],
         ),
         actions: [
+          // Period Selector Dropdown (all 24 periods)
           Container(
             margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -201,15 +283,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 value: _selectedPeriod,
                 dropdownColor: const Color(0xFF1E293B),
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                items: ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06']
+                items: _periods
                     .map((p) => DropdownMenuItem(value: p, child: Text('Period $p')))
                     .toList(),
                 onChanged: (val) {
                   if (val != null) {
-                    setState(() {
-                      _selectedPeriod = val;
-                      _recalculatePayroll();
-                    });
+                    setState(() => _selectedPeriod = val);
+                    _fetchDataAndRecalculate();
                   }
                 },
               ),
@@ -221,6 +301,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         index: _currentTab,
         children: [
           _buildPayrollHub(),
+          _buildAttendanceTracker(),
+          _buildAdjustmentsLedger(),
           _buildPayslipView(),
           _buildEmployeesDirectory(),
         ],
@@ -228,15 +310,23 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentTab,
         onDestinationSelected: (idx) {
-          setState(() {
-            _currentTab = idx;
-          });
+          setState(() => _currentTab = idx);
         },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.calculate_outlined),
             selectedIcon: Icon(Icons.calculate),
             label: 'Payroll Hub',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.beach_access_outlined),
+            selectedIcon: Icon(Icons.beach_access),
+            label: 'Day-offs / Leave',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet),
+            label: 'Advances & Expenses',
           ),
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
@@ -268,7 +358,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
     return Column(
       children: [
-        // Pay Cycle Filter Bar
         Container(
           color: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -287,8 +376,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             ),
           ),
         ),
-
-        // KPI Summary Cards
         Container(
           padding: const EdgeInsets.all(16),
           child: Wrap(
@@ -326,8 +413,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             ],
           ),
         ),
-
-        // Employee Payroll Records List
         Expanded(
           child: records.isEmpty
               ? const Center(child: Text('No employees found in this cycle.'))
@@ -362,7 +447,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
-
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -371,10 +455,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     children: [
                                       Text(
                                         rec.nickname,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
-                                        ),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                                       ),
                                       const SizedBox(width: 8),
                                       Container(
@@ -401,17 +482,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                         ),
                                         child: Text(
                                           rec.payGroup,
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Color(0xFF0369A1),
-                                          ),
+                                          style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
                                         ),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
-
-                                  // Smart Prorate indicator badge
                                   if (rec.isProrate)
                                     Container(
                                       margin: const EdgeInsets.only(bottom: 4),
@@ -437,25 +513,19 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                         ],
                                       ),
                                     ),
-
                                   Text(
-                                    'Base: ฿${currency.format(rec.basePay)}  |  Extra: +฿${currency.format(rec.totalExtra)}  |  Ded: -฿${currency.format(rec.totalDeduction)}  |  Work: ${rec.workDays}d  Off: ${rec.dayOff}d',
+                                    'Base: ฿${currency.format(rec.basePay)} | Extra: +฿${currency.format(rec.totalExtra)} | Ded: -฿${currency.format(rec.totalDeduction)} | Off: ${rec.dayOff}d',
                                     style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                                   ),
                                 ],
                               ),
                             ),
-
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
                                 Text(
                                   '฿${currency.format(rec.netPay)}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF0F172A),
-                                  ),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                                 ),
                                 const SizedBox(height: 4),
                                 Row(
@@ -474,7 +544,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                       onPressed: () {
                                         setState(() {
                                           _selectedPayslipEp = rec.epCode;
-                                          _currentTab = 1;
+                                          _currentTab = 3;
                                         });
                                       },
                                       constraints: const BoxConstraints(),
@@ -495,89 +565,235 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     );
   }
 
-  Widget _buildFilterChip(String label, {String? subtitle}) {
-    final isSelected = _selectedGroupFilter == label;
-    return FilterChip(
-      selected: isSelected,
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-      label: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
-          if (subtitle != null)
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 10,
-                color: isSelected ? Colors.white70 : const Color(0xFF64748B),
-              ),
-            ),
-        ],
-      ),
-      selectedColor: const Color(0xFF0284C7),
-      labelStyle: TextStyle(color: isSelected ? Colors.white : const Color(0xFF334155)),
-      onSelected: (_) {
-        setState(() {
-          _selectedGroupFilter = label;
-        });
-      },
-    );
-  }
-
-  Widget _buildSummaryCard({
-    required String title,
-    required String value,
-    required Color color,
-    required IconData icon,
-    required String subtitle,
-  }) {
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  // ===========================================================================
+  // TAB 2: ATTENDANCE & DAY-OFF LOGGER (NEW!)
+  // ===========================================================================
+  Widget _buildAttendanceTracker() {
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.all(16),
+          child: Row(
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                  overflow: TextOverflow.ellipsis,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Attendance & Day-off Log (${_attendanceLogs.length} records)',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  Text(
+                    'Period $_selectedPeriod • Logs sync directly with Excel Attendance_Log',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
               ),
-              const SizedBox(width: 4),
-              Icon(icon, size: 16, color: color),
+              const Spacer(),
+              ElevatedButton.icon(
+                onPressed: _showLogAttendanceDialog,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.add_task, size: 18),
+                label: const Text('Log Day-off / Leave / OT'),
+              ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-          ),
-        ],
-      ),
+        ),
+        Expanded(
+          child: _attendanceLogs.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.event_available, size: 48, color: Color(0xFF94A3B8)),
+                      SizedBox(height: 12),
+                      Text('No attendance records logged for this period yet.'),
+                      Text('Click "+ Log Day-off / Leave / OT" to record.', style: TextStyle(color: Color(0xFF94A3B8))),
+                    ],
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _attendanceLogs.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 6),
+                  itemBuilder: (context, idx) {
+                    final log = _attendanceLogs[idx];
+                    final cat = log['category'] ?? 'Day-off';
+                    Color badgeColor = const Color(0xFF3B82F6);
+                    if (cat == 'Day-off') badgeColor = const Color(0xFF10B981);
+                    if (cat == 'Sick') badgeColor = const Color(0xFFEF4444);
+                    if (cat == 'Half-day') badgeColor = const Color(0xFFF59E0B);
+                    if (cat.contains('OT')) badgeColor = const Color(0xFF8B5CF6);
+
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: badgeColor.withValues(alpha: 0.12),
+                          foregroundColor: badgeColor,
+                          child: Icon(
+                            cat == 'Day-off'
+                                ? Icons.beach_access
+                                : (cat == 'Sick' ? Icons.healing : Icons.schedule),
+                            size: 18,
+                          ),
+                        ),
+                        title: Row(
+                          children: [
+                            Text(
+                              log['nickname'] ?? '',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 8),
+                            Text('(${log['ep_code']})', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: badgeColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                cat,
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeColor),
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Text(
+                          'Date: ${log['date']}  |  Units: ${log['units']}  |  Shift: ${log['shift']}${(log['note'] != null && log['note'].toString().isNotEmpty) ? '  • Note: ${log['note']}' : ''}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
   // ===========================================================================
-  // TAB 2: DIGITAL PAYSLIP VIEWER
+  // TAB 3: EXPENSES & ADJUSTMENTS LEDGER (NEW!)
+  // ===========================================================================
+  Widget _buildAdjustmentsLedger() {
+    final currency = NumberFormat('#,##0.00', 'en_US');
+    final totalAdvances = _adjustments
+        .where((a) => a['category']?.toString().contains('Advance') == true)
+        .fold<double>(0, (sum, a) => sum + ((a['amount'] as num?)?.toDouble() ?? 0.0));
+    final totalWorkPermit = _adjustments
+        .where((a) => a['category']?.toString().contains('Work Permit') == true || a['category']?.toString().contains('Passport') == true)
+        .fold<double>(0, (sum, a) => sum + ((a['amount'] as num?)?.toDouble() ?? 0.0));
+
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Expenses & Advance Ledger (${_adjustments.length} records)',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  Text(
+                    'Total Advances: ฿${currency.format(totalAdvances)}  |  Work Permit: ฿${currency.format(totalWorkPermit)}',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              ElevatedButton.icon(
+                onPressed: _showLogAdjustmentDialog,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.add_card, size: 18),
+                label: const Text('Record Advance / Expense'),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _adjustments.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.credit_card_off, size: 48, color: Color(0xFF94A3B8)),
+                      SizedBox(height: 12),
+                      Text('No advance payments or adjustments recorded for this period.'),
+                      Text('Click "+ Record Advance / Expense" to add.', style: TextStyle(color: Color(0xFF94A3B8))),
+                    ],
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _adjustments.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 6),
+                  itemBuilder: (context, idx) {
+                    final adj = _adjustments[idx];
+                    final isIncome = adj['type'] == 'Income';
+                    final amt = (adj['amount'] as num?)?.toDouble() ?? 0.0;
+
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: isIncome ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                          foregroundColor: isIncome ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                          child: Icon(isIncome ? Icons.add : Icons.remove),
+                        ),
+                        title: Row(
+                          children: [
+                            Text(
+                              adj['nickname'] ?? '',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 8),
+                            Text('(${adj['ep_code']})', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                adj['category'] ?? '',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Text(
+                          'Due Date: ${adj['due_date']}  |  ${adj['description'] ?? ''}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        trailing: Text(
+                          '${isIncome ? '+' : '-'}฿${currency.format(amt)}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: isIncome ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  // ===========================================================================
+  // TAB 4: DIGITAL PAYSLIP VIEWER
   // ===========================================================================
   Widget _buildPayslipView() {
     final currency = NumberFormat('#,##0.00', 'en_US');
@@ -595,7 +811,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           constraints: const BoxConstraints(maxWidth: 680),
           child: Column(
             children: [
-              // Employee Selector Card
               Card(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -615,11 +830,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               );
                             }).toList(),
                             onChanged: (val) {
-                              if (val != null) {
-                                setState(() {
-                                  _selectedPayslipEp = val;
-                                });
-                              }
+                              if (val != null) setState(() => _selectedPayslipEp = val);
                             },
                           ),
                         ),
@@ -629,7 +840,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-
               if (record == null)
                 const Card(
                   child: Padding(
@@ -638,7 +848,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ),
                 )
               else ...[
-                // The Payslip Widget wrapped with RepaintBoundary for PNG Export
                 RepaintBoundary(
                   key: _payslipKey,
                   child: Card(
@@ -649,7 +858,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // Header
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -699,8 +907,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             ],
                           ),
                           const Divider(height: 28),
-
-                          // Employee Info Box
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
@@ -742,12 +948,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             ),
                           ),
                           const SizedBox(height: 14),
-
-                          // NEW: Attendance & Time-off / Day-offs Section
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF0FDF4), // Gentle green
+                              color: const Color(0xFFF0FDF4),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: const Color(0xFFBBF7D0)),
                             ),
@@ -763,8 +967,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             ),
                           ),
                           const SizedBox(height: 14),
-
-                          // Smart Prorate Banner
                           if (record.isProrate)
                             Container(
                               margin: const EdgeInsets.only(bottom: 16),
@@ -787,12 +989,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                 ],
                               ),
                             ),
-
-                          // Earnings vs Deductions Columns
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Earnings
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -822,8 +1021,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                 ),
                               ),
                               const SizedBox(width: 24),
-
-                              // Deductions
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -856,8 +1053,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             ],
                           ),
                           const SizedBox(height: 24),
-
-                          // Net Pay Banner
                           Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -897,14 +1092,11 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // Action Buttons: Save as Image, Copy for LINE, Adjustments
                 Wrap(
                   spacing: 12,
                   runSpacing: 10,
                   alignment: WrapAlignment.center,
                   children: [
-                    // Save as Image (PNG)
                     ElevatedButton.icon(
                       onPressed: _isExportingImage ? null : () => _savePayslipAsImage(record!),
                       style: ElevatedButton.styleFrom(
@@ -918,8 +1110,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           : const Icon(Icons.image),
                       label: Text(_isExportingImage ? 'Saving...' : 'Save as Image (PNG)', style: const TextStyle(fontWeight: FontWeight.bold)),
                     ),
-
-                    // Copy for LINE
                     ElevatedButton.icon(
                       onPressed: () {
                         final text = PayrollEngine.formatLinePayslip(record!);
@@ -940,8 +1130,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       icon: const Icon(Icons.chat_bubble_outline),
                       label: const Text('Copy for LINE', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
-
-                    // Adjust Pay & Attendance
                     OutlinedButton.icon(
                       onPressed: () => _showEditAdjustmentsDialog(record!),
                       style: OutlinedButton.styleFrom(
@@ -949,7 +1137,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       icon: const Icon(Icons.tune),
-                      label: const Text('Adjust Pay & Attendance'),
+                      label: const Text('Quick Adjustments'),
                     ),
                   ],
                 ),
@@ -961,46 +1149,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     );
   }
 
-  Widget _buildAttendanceItem(IconData icon, String label, String value) {
-    return Column(
-      children: [
-        Icon(icon, size: 16, color: const Color(0xFF16A34A)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF475569))),
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
-      ],
-    );
-  }
-
-  Widget _buildPayslipLine(String label, String value, {bool isBold = false, Color? color}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              color: const Color(0xFF475569),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-              color: color ?? const Color(0xFF1E293B),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ===========================================================================
-  // TAB 3: EMPLOYEES DIRECTORY
+  // TAB 5: EMPLOYEES DIRECTORY
   // ===========================================================================
   Widget _buildEmployeesDirectory() {
     final currency = NumberFormat('#,##0.00', 'en_US');
@@ -1009,7 +1159,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
     return Column(
       children: [
-        // Employee Directory Header
         Container(
           color: Colors.white,
           padding: const EdgeInsets.all(16),
@@ -1056,8 +1205,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             ],
           ),
         ),
-
-        // Employees List
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.all(16),
@@ -1086,10 +1233,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        '(${emp.epCode})',
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                      ),
+                      Text('(${emp.epCode})', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1127,10 +1271,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626)),
                         ),
                       if (emp.note.isNotEmpty)
-                        Text(
-                          '📝 ${emp.note}',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                        ),
+                        Text('📝 ${emp.note}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                     ],
                   ),
                   trailing: PopupMenuButton<String>(
@@ -1174,18 +1315,351 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   }
 
   // ===========================================================================
-  // DIALOGS & ACTIONS
+  // DIALOGS: ADD ATTENDANCE, ADD ADJUSTMENT, ADD EMPLOYEE
   // ===========================================================================
 
+  void _showLogAttendanceDialog() {
+    DateTime selectedDate = DateTime.now();
+    String epCode = _employees.first.epCode;
+    String category = 'Day-off';
+    final noteCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDlgState) {
+            final emp = _employees.firstWhere((e) => e.epCode == epCode, orElse: () => _employees.first);
+            return AlertDialog(
+              title: const Text('Log Day-off / Leave / OT'),
+              content: SizedBox(
+                width: 440,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('Date: ${DateFormat('yyyy-MM-dd').format(selectedDate)}'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.calendar_today),
+                        onPressed: () async {
+                          final p = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2024),
+                            lastDate: DateTime(2030),
+                          );
+                          if (p != null) setDlgState(() => selectedDate = p);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: epCode,
+                      decoration: const InputDecoration(labelText: 'Employee'),
+                      items: _employees.map((e) {
+                        return DropdownMenuItem(value: e.epCode, child: Text('${e.epCode} - ${e.nickname}'));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) setDlgState(() => epCode = val);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: category,
+                      decoration: const InputDecoration(labelText: 'Category'),
+                      items: const [
+                        DropdownMenuItem(value: 'Day-off', child: Text('Day-off (วันหยุดประจำ)')),
+                        DropdownMenuItem(value: 'Sick', child: Text('Sick Leave (ลาป่วย)')),
+                        DropdownMenuItem(value: 'Half-day', child: Text('Half-day (ทำงานครึ่งวัน)')),
+                        DropdownMenuItem(value: 'OT Days', child: Text('OT Days (ทำงานล่วงเวลา)')),
+                        DropdownMenuItem(value: 'Work Days', child: Text('Work Days (วันทำงาน)')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setDlgState(() => category = val);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: noteCtrl,
+                      decoration: const InputDecoration(labelText: 'Note (Optional)'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final navigator = Navigator.of(ctx);
+
+                    final success = await ApiService.createAttendance(
+                      date: dateStr,
+                      epCode: epCode,
+                      nickname: emp.nickname,
+                      category: category,
+                      note: noteCtrl.text,
+                    );
+                    navigator.pop();
+                    if (mounted) {
+                      _fetchDataAndRecalculate();
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(success ? '✅ Attendance logged to Database!' : '⚠️ Logged locally'),
+                          backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Save to Database'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showLogAdjustmentDialog() {
+    String epCode = _employees.first.epCode;
+    String type = 'Deduction';
+    String category = 'Advance Payment';
+    final amtCtrl = TextEditingController(text: '1000');
+    final descCtrl = TextEditingController();
+    DateTime dueDate = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDlgState) {
+            final emp = _employees.firstWhere((e) => e.epCode == epCode, orElse: () => _employees.first);
+            return AlertDialog(
+              title: const Text('Record Advance / Expense / Bonus'),
+              content: SizedBox(
+                width: 440,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: epCode,
+                      decoration: const InputDecoration(labelText: 'Employee'),
+                      items: _employees.map((e) {
+                        return DropdownMenuItem(value: e.epCode, child: Text('${e.epCode} - ${e.nickname}'));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) setDlgState(() => epCode = val);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: type,
+                      decoration: const InputDecoration(labelText: 'Type'),
+                      items: const [
+                        DropdownMenuItem(value: 'Deduction', child: Text('Deduction (รายการหักเงิน)')),
+                        DropdownMenuItem(value: 'Income', child: Text('Income (รายรับเสริม/โบนัส)')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) setDlgState(() => type = val);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: category,
+                      decoration: const InputDecoration(labelText: 'Category'),
+                      items: type == 'Deduction'
+                          ? const [
+                              DropdownMenuItem(value: 'Advance Payment', child: Text('Advance Payment (เงินเบิกล่วงหน้า)')),
+                              DropdownMenuItem(value: 'Work Permit', child: Text('Work Permit Fee (ค่าเอกสารแรงงาน)')),
+                              DropdownMenuItem(value: 'Passport / CI', child: Text('Passport / CI (ค่าพาสปอร์ต)')),
+                              DropdownMenuItem(value: 'Other Deduction', child: Text('Other Deduction (หักอื่นๆ)')),
+                            ]
+                          : const [
+                              DropdownMenuItem(value: 'Bonus', child: Text('Bonus / Incentive (เบี้ยขยัน/โบนัส)')),
+                              DropdownMenuItem(value: 'OT Allowance', child: Text('OT Allowance (ค่ากะพิเศษ)')),
+                              DropdownMenuItem(value: 'Other Income', child: Text('Other Income (รายรับอื่นๆ)')),
+                            ],
+                      onChanged: (val) {
+                        if (val != null) setDlgState(() => category = val);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: amtCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Amount (THB)'),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(labelText: 'Description / Note'),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    final amount = double.tryParse(amtCtrl.text) ?? 0;
+                    final dueStr = DateFormat('yyyy-MM-dd').format(dueDate);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final navigator = Navigator.of(ctx);
+
+                    final success = await ApiService.createAdjustment(
+                      period: _selectedPeriod,
+                      dueDate: dueStr,
+                      epCode: epCode,
+                      nickname: emp.nickname,
+                      type: type,
+                      category: category,
+                      description: descCtrl.text,
+                      amount: amount,
+                    );
+                    navigator.pop();
+                    if (mounted) {
+                      _fetchDataAndRecalculate();
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(success ? '✅ Expense recorded to Database!' : '⚠️ Recorded locally'),
+                          backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Save to Database'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAttendanceItem(IconData icon, String label, String value) {
+    return Column(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF16A34A)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF475569))),
+        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+      ],
+    );
+  }
+
+  Widget _buildPayslipLine(String label, String value, {bool isBold = false, Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+              color: const Color(0xFF475569),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
+              color: color ?? const Color(0xFF1E293B),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, {String? subtitle}) {
+    final isSelected = _selectedGroupFilter == label;
+    return FilterChip(
+      selected: isSelected,
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+      label: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+          if (subtitle != null)
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 10,
+                color: isSelected ? Colors.white70 : const Color(0xFF64748B),
+              ),
+            ),
+        ],
+      ),
+      selectedColor: const Color(0xFF0284C7),
+      labelStyle: TextStyle(color: isSelected ? Colors.white : const Color(0xFF334155)),
+      onSelected: (_) {
+        setState(() => _selectedGroupFilter = label);
+      },
+    );
+  }
+
+  Widget _buildSummaryCard({
+    required String title,
+    required String value,
+    required Color color,
+    required IconData icon,
+    required String subtitle,
+  }) {
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(icon, size: 16, color: color),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showEditAdjustmentsDialog(PayrollRecord record) {
-    // Attendance Controllers
     final workDaysCtrl = TextEditingController(text: record.workDays.toString());
     final dayOffCtrl = TextEditingController(text: record.dayOff.toString());
     final sickCtrl = TextEditingController(text: record.sickLeave.toString());
     final halfCtrl = TextEditingController(text: record.halfDays.toString());
     final otDaysCtrl = TextEditingController(text: record.otDays.toString());
 
-    // Financial Controllers
     final otCtrl = TextEditingController(text: record.overtimePay > 0 ? record.overtimePay.toString() : '');
     final bonusCtrl = TextEditingController(text: record.bonusPay > 0 ? record.bonusPay.toString() : '');
     final otherExtraCtrl = TextEditingController(text: record.otherExtra > 0 ? record.otherExtra.toString() : '');
@@ -1207,7 +1681,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Attendance Section
                   const Text('🏖️ Attendance & Day-offs', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0369A1))),
                   const SizedBox(height: 8),
                   Row(
@@ -1258,8 +1731,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     ],
                   ),
                   const Divider(height: 24),
-
-                  // Earnings Section
                   const Text('➕ Earnings / Allowances (THB)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
                   const SizedBox(height: 8),
                   TextField(
@@ -1285,8 +1756,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     decoration: const InputDecoration(labelText: 'Earnings Note', border: OutlineInputBorder()),
                   ),
                   const Divider(height: 24),
-
-                  // Deductions Section
                   const Text('➖ Deductions (THB)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
                   const SizedBox(height: 8),
                   TextField(
@@ -1316,10 +1785,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () {
                 setState(() {
@@ -1413,9 +1879,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             firstDate: DateTime(2020),
                             lastDate: DateTime(2030),
                           );
-                          if (picked != null) {
-                            setDialogState(() => startDate = picked);
-                          }
+                          if (picked != null) setDialogState(() => startDate = picked);
                         },
                       ),
                     ),
@@ -1437,8 +1901,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       );
                       setState(() {
                         _employees.add(newEmp);
-                        _recalculatePayroll();
                       });
+                      _fetchDataAndRecalculate();
                       Navigator.pop(ctx);
                     }
                   },
@@ -1481,9 +1945,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               firstDate: DateTime(2020),
                               lastDate: DateTime(2030),
                             );
-                            if (picked != null) {
-                              setDialogState(() => start = picked);
-                            }
+                            if (picked != null) setDialogState(() => start = picked);
                           },
                         ),
                         if (start != null)
@@ -1509,9 +1971,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               firstDate: DateTime(2020),
                               lastDate: DateTime(2030),
                             );
-                            if (picked != null) {
-                              setDialogState(() => resign = picked);
-                            }
+                            if (picked != null) setDialogState(() => resign = picked);
                           },
                         ),
                         if (resign != null)
@@ -1536,8 +1996,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           resignDate: resign,
                           status: resign != null ? 'Resigned' : emp.status,
                         );
-                        _recalculatePayroll();
                       });
+                      _fetchDataAndRecalculate();
                     }
                     Navigator.pop(ctx);
                   },
@@ -1560,8 +2020,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           status: newStatus,
           resignDate: newStatus == 'Resigned' ? (emp.resignDate ?? DateTime.now()) : null,
         );
-        _recalculatePayroll();
       });
+      _fetchDataAndRecalculate();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${emp.nickname} status updated to $newStatus'),
