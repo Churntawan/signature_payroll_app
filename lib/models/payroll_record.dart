@@ -19,6 +19,13 @@ class PayrollRecord {
   double otherExtra;
   String extraNote;
   
+  // Attendance & Leave details
+  int workDays;
+  int dayOff;
+  int sickLeave;
+  int halfDays;
+  int otDays;
+
   double advanceDeduction;
   double workPermitDeduction;
   double otherDeduction;
@@ -44,6 +51,11 @@ class PayrollRecord {
     this.bonusPay = 0,
     this.otherExtra = 0,
     this.extraNote = '',
+    this.workDays = 26,
+    this.dayOff = 4,
+    this.sickLeave = 0,
+    this.halfDays = 0,
+    this.otDays = 0,
     this.advanceDeduction = 0,
     this.workPermitDeduction = 0,
     this.otherDeduction = 0,

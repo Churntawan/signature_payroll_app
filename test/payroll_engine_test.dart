@@ -63,7 +63,7 @@ void main() {
       expect(record.workedDays, 10);
       expect(record.basePay, 4000);
       expect(record.netPay, 4000);
-      expect(record.prorateReason.contains('เริ่มงานใหม่'), true);
+      expect(record.prorateReason.contains('Started'), true);
     });
 
     test('Resigned before cycle is automatically excluded', () {

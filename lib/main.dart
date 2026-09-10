@@ -1,10 +1,13 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import 'data/initial_employees.dart';
 import 'models/employee.dart';
 import 'models/payroll_record.dart';
+import 'services/image_saver.dart';
 import 'services/payroll_engine.dart';
 
 void main() {
@@ -22,7 +25,7 @@ class SignaturePayrollApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0284C7), // Ocean Cyan / Deep Navy
+          seedColor: const Color(0xFF0284C7),
           primary: const Color(0xFF0284C7),
           surface: Colors.white,
           brightness: Brightness.light,
@@ -48,17 +51,21 @@ class PayrollMainScreen extends StatefulWidget {
 class _PayrollMainScreenState extends State<PayrollMainScreen> {
   int _currentTab = 0;
 
-  // รายชื่อพนักงานในระบบ (เริ่มต้นจาก 31 คนใน Excel)
+  // Key for capturing the payslip as an image
+  final GlobalKey _payslipKey = GlobalKey();
+  bool _isExportingImage = false;
+
+  // List of employees (starts with 31 from Excel)
   late List<Employee> _employees;
 
-  // งวดปัจจุบัน
+  // Current period and filter
   String _selectedPeriod = '2025-01';
-  String _selectedGroupFilter = 'ทั้งหมด'; // 'ทั้งหมด', 'Date : 1', 'Date : 10', 'Date : 20'
+  String _selectedGroupFilter = 'All Groups'; // 'All Groups', 'Date : 1', 'Date : 10', 'Date : 20'
 
-  // บันทึกรายการเงินเดือนที่คำนวณและปรับแต่งแล้ว
+  // Payroll records map (key: epCode)
   Map<String, PayrollRecord> _payrollRecords = {};
 
-  // พนักงานที่กำลังเปิดดูสลิป
+  // Selected employee for payslip view
   String? _selectedPayslipEp;
 
   @override
@@ -79,9 +86,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         period: _selectedPeriod,
       );
       if (rec != null) {
-        // ถ้ารายการเดิมมีการใส่ OT/เบิกเงินไว้ ให้คงไว้
         if (_payrollRecords.containsKey(emp.epCode)) {
           final old = _payrollRecords[emp.epCode]!;
+          rec.workDays = old.workDays;
+          rec.dayOff = old.dayOff;
+          rec.sickLeave = old.sickLeave;
+          rec.halfDays = old.halfDays;
+          rec.otDays = old.otDays;
           rec.overtimePay = old.overtimePay;
           rec.bonusPay = old.bonusPay;
           rec.otherExtra = old.otherExtra;
@@ -101,9 +112,47 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
   List<PayrollRecord> get _filteredRecords {
     return _payrollRecords.values.where((r) {
-      if (_selectedGroupFilter == 'ทั้งหมด') return true;
+      if (_selectedGroupFilter == 'All Groups') return true;
       return r.payGroup == _selectedGroupFilter;
     }).toList();
+  }
+
+  // Save payslip as PNG image
+  Future<void> _savePayslipAsImage(PayrollRecord record) async {
+    setState(() => _isExportingImage = true);
+    try {
+      await Future.delayed(const Duration(milliseconds: 100));
+      final boundary = _payslipKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+
+      final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
+      final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData != null) {
+        final Uint8List pngBytes = byteData.buffer.asUint8List();
+        final fileName = 'payslip_${record.epCode}_${record.nickname}_${record.period}.png';
+        ImageSaver.savePng(pngBytes, fileName);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Payslip image downloaded: $fileName'),
+              backgroundColor: const Color(0xFF10B981),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isExportingImage = false);
+    }
   }
 
   @override
@@ -132,7 +181,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                 ),
                 Text(
-                  'ระบบบริหารเงินเดือนและ Smart Prorate',
+                  'Smart Prorate & Payroll Management Suite',
                   style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                 ),
               ],
@@ -140,7 +189,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           ],
         ),
         actions: [
-          // เลือกงวด
           Container(
             margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -154,7 +202,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 dropdownColor: const Color(0xFF1E293B),
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                 items: ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06']
-                    .map((p) => DropdownMenuItem(value: p, child: Text('งวด $p')))
+                    .map((p) => DropdownMenuItem(value: p, child: Text('Period $p')))
                     .toList(),
                 onChanged: (val) {
                   if (val != null) {
@@ -188,17 +236,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           NavigationDestination(
             icon: Icon(Icons.calculate_outlined),
             selectedIcon: Icon(Icons.calculate),
-            label: 'คำนวณเงินเดือน',
+            label: 'Payroll Hub',
           ),
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
-            label: 'สลิปเงินเดือน',
+            label: 'Digital Payslip',
           ),
           NavigationDestination(
             icon: Icon(Icons.people_alt_outlined),
             selectedIcon: Icon(Icons.people_alt),
-            label: 'ทะเบียนพนักงาน',
+            label: 'Employees',
           ),
         ],
       ),
@@ -220,7 +268,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
     return Column(
       children: [
-        // แถบเลือกรอบจ่าย
+        // Pay Cycle Filter Bar
         Container(
           color: Colors.white,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -228,65 +276,61 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _buildFilterChip('ทั้งหมด'),
+                _buildFilterChip('All Groups'),
                 const SizedBox(width: 8),
-                _buildFilterChip('Date : 1', subtitle: '2 ก่อนหน้า - 1 นี้'),
+                _buildFilterChip('Date : 1', subtitle: '2nd prev - 1st current'),
                 const SizedBox(width: 8),
-                _buildFilterChip('Date : 10', subtitle: '11 ก่อนหน้า - 10 นี้'),
+                _buildFilterChip('Date : 10', subtitle: '11th prev - 10th current'),
                 const SizedBox(width: 8),
-                _buildFilterChip('Date : 20', subtitle: '21 ก่อนหน้า - 20 นี้'),
+                _buildFilterChip('Date : 20', subtitle: '21st prev - 20th current'),
               ],
             ),
           ),
         ),
 
-        // กล่องสรุปภาพรวมการเงิน (KPI Cards)
+        // KPI Summary Cards
         Container(
           padding: const EdgeInsets.all(16),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _buildSummaryCard(
-                    title: 'ยอดจ่ายสุทธิทั้งหมด',
-                    value: '฿${currency.format(totalNet)}',
-                    color: const Color(0xFF0284C7),
-                    icon: Icons.payments,
-                    subtitle: 'พนักงานในรอบนี้ ${records.length} คน',
-                  ),
-                  _buildSummaryCard(
-                    title: 'ค่าจ้างฐาน + Prorate',
-                    value: '฿${currency.format(totalBase)}',
-                    color: const Color(0xFF334155),
-                    icon: Icons.account_balance_wallet,
-                    subtitle: prorateCount > 0 ? '⚠️ คิดเฉลี่ย Prorate $prorateCount คน' : 'ทำงานเต็มงวดทุกคน',
-                  ),
-                  _buildSummaryCard(
-                    title: 'รายได้เสริม (+)',
-                    value: '+฿${currency.format(totalExtra)}',
-                    color: const Color(0xFF10B981),
-                    icon: Icons.trending_up,
-                    subtitle: 'OT, โบนัส, เบี้ยขยัน',
-                  ),
-                  _buildSummaryCard(
-                    title: 'รายการหัก (-)',
-                    value: '-฿${currency.format(totalDeduction)}',
-                    color: const Color(0xFFEF4444),
-                    icon: Icons.trending_down,
-                    subtitle: 'เบิก, ค่า Work Permit',
-                  ),
-                ],
-              );
-            },
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildSummaryCard(
+                title: 'Total Net Payout',
+                value: '฿${currency.format(totalNet)}',
+                color: const Color(0xFF0284C7),
+                icon: Icons.payments,
+                subtitle: '${records.length} Employees in this cycle',
+              ),
+              _buildSummaryCard(
+                title: 'Base & Prorate Pay',
+                value: '฿${currency.format(totalBase)}',
+                color: const Color(0xFF334155),
+                icon: Icons.account_balance_wallet,
+                subtitle: prorateCount > 0 ? '⚠️ $prorateCount Smart Prorate applied' : 'All full month',
+              ),
+              _buildSummaryCard(
+                title: 'Earnings (+)',
+                value: '+฿${currency.format(totalExtra)}',
+                color: const Color(0xFF10B981),
+                icon: Icons.trending_up,
+                subtitle: 'OT, Bonuses & Allowances',
+              ),
+              _buildSummaryCard(
+                title: 'Deductions (-)',
+                value: '-฿${currency.format(totalDeduction)}',
+                color: const Color(0xFFEF4444),
+                icon: Icons.trending_down,
+                subtitle: 'Advances, Work Permit fees',
+              ),
+            ],
           ),
         ),
 
-        // รายการพนักงานในรอบ
+        // Employee Payroll Records List
         Expanded(
           child: records.isEmpty
-              ? const Center(child: Text('ไม่มีพนักงานในรอบจ่ายที่เลือก'))
+              ? const Center(child: Text('No employees found in this cycle.'))
               : ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   itemCount: records.length,
@@ -305,7 +349,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         padding: const EdgeInsets.all(12),
                         child: Row(
                           children: [
-                            // Avatar
                             CircleAvatar(
                               backgroundColor: rec.isProrate
                                   ? const Color(0xFFFFF7ED)
@@ -320,7 +363,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             ),
                             const SizedBox(width: 12),
 
-                            // รายละเอียด
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +411,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                   ),
                                   const SizedBox(height: 4),
 
-                                  // Badge กรณี Prorate
+                                  // Smart Prorate indicator badge
                                   if (rec.isProrate)
                                     Container(
                                       margin: const EdgeInsets.only(bottom: 4),
@@ -385,7 +427,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                           const Icon(Icons.info_outline, size: 13, color: Color(0xFFEA580C)),
                                           const SizedBox(width: 4),
                                           Text(
-                                            'Prorate: ${rec.workedDays} วัน (วันละ ฿${(rec.dailyRate).toStringAsFixed(0)}) [${rec.prorateReason}]',
+                                            'Prorate: ${rec.workedDays} days (@ ฿${(rec.dailyRate).toStringAsFixed(0)}/day) [${rec.prorateReason}]',
                                             style: const TextStyle(
                                               fontSize: 11,
                                               color: Color(0xFFC2410C),
@@ -396,16 +438,14 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                       ),
                                     ),
 
-                                  // สรุปตัวเลข
                                   Text(
-                                    'ฐาน: ฿${currency.format(rec.basePay)}  |  เพิ่ม: +฿${currency.format(rec.totalExtra)}  |  หัก: -฿${currency.format(rec.totalDeduction)}',
+                                    'Base: ฿${currency.format(rec.basePay)}  |  Extra: +฿${currency.format(rec.totalExtra)}  |  Ded: -฿${currency.format(rec.totalDeduction)}  |  Work: ${rec.workDays}d  Off: ${rec.dayOff}d',
                                     style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                                   ),
                                 ],
                               ),
                             ),
 
-                            // ยอดสุทธิ และปุ่มแอ็กชัน
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
@@ -422,14 +462,14 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
-                                      tooltip: 'แก้ไขรายการเพิ่ม/หัก',
+                                      tooltip: 'Adjust Pay & Attendance',
                                       icon: const Icon(Icons.edit_note, color: Color(0xFF0284C7)),
                                       onPressed: () => _showEditAdjustmentsDialog(rec),
                                       constraints: const BoxConstraints(),
                                       padding: const EdgeInsets.all(6),
                                     ),
                                     IconButton(
-                                      tooltip: 'ดูสลิปเงินเดือน',
+                                      tooltip: 'View Digital Payslip',
                                       icon: const Icon(Icons.receipt_long, color: Color(0xFF10B981)),
                                       onPressed: () {
                                         setState(() {
@@ -459,6 +499,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     final isSelected = _selectedGroupFilter == label;
     return FilterChip(
       selected: isSelected,
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       label: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -475,7 +516,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         ],
       ),
       selectedColor: const Color(0xFF0284C7),
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       labelStyle: TextStyle(color: isSelected ? Colors.white : const Color(0xFF334155)),
       onSelected: (_) {
         setState(() {
@@ -552,16 +592,16 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       padding: const EdgeInsets.all(20),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 650),
+          constraints: const BoxConstraints(maxWidth: 680),
           child: Column(
             children: [
-              // เมนูเลือกพนักงาน
+              // Employee Selector Card
               Card(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
                     children: [
-                      const Text('เลือกพนักงาน: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text('Select Employee: ', style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(width: 12),
                       Expanded(
                         child: DropdownButtonHideUnderline(
@@ -594,279 +634,322 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(32),
-                    child: Text('กรุณาเลือกพนักงานเพื่อแสดงสลิป'),
+                    child: Text('Please select an employee to view payslip.'),
                   ),
                 )
               else ...[
-                // ตัวสลิปเงินเดือนแบบสวยงาม
-                Card(
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // หัวสลิป
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                // The Payslip Widget wrapped with RepaintBoundary for PNG Export
+                RepaintBoundary(
+                  key: _payslipKey,
+                  child: Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Header
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0F172A),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Icon(Icons.diamond, color: Colors.white, size: 18),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Text(
+                                        'SIGNATURE PAYROLL',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    'PAYSLIP / SALARY STATEMENT',
+                                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B), letterSpacing: 0.5),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Period ${record.period}',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 28),
+
+                          // Employee Info Box
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Row(
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF0F172A),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(Icons.diamond, color: Colors.white, size: 18),
+                                    Text(
+                                      'Employee: ${record.nickname} (${record.epCode})',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                     ),
-                                    const SizedBox(width: 8),
-                                    const Text(
-                                      'SIGNATURE PAYROLL',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
-                                      ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Pay Group: ${record.payGroup}',
+                                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'ใบแจ้งยอดเงินเดือน / PAYSLIP',
-                                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      'Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}',
+                                      style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Pay Date: ${df.format(record.payDate)}',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'งวด ${record.period}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Divider(height: 32),
-
-                        // ข้อมูลพนักงานและรอบการจ่าย
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'ชื่อพนักงาน: ${record.nickname} (${record.epCode})',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'กลุ่ม: ${record.payGroup}',
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                  ),
-                                ],
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    'รอบงาน: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}',
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'วันจ่าย: ${df.format(record.payDate)}',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 14),
 
-                        // แจ้งเตือน Prorate ถ้ามี
-                        if (record.isProrate)
+                          // NEW: Attendance & Time-off / Day-offs Section
                           Container(
-                            margin: const EdgeInsets.only(bottom: 16),
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFF7ED),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFFED7AA)),
+                              color: const Color(0xFFF0FDF4), // Gentle green
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFBBF7D0)),
                             ),
                             child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                const Icon(Icons.info, color: Color(0xFFEA580C), size: 18),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'งวดนี้คิดค่าแรงตามสัดส่วน (Prorate) จำนวน ${record.workedDays} วัน (วันละ ฿${currency.format(record.dailyRate)}) • สาเหตุ: ${record.prorateReason}',
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFFC2410C)),
+                                _buildAttendanceItem(Icons.work_history_outlined, 'Work Days', '${record.workDays} days'),
+                                _buildAttendanceItem(Icons.beach_access_outlined, 'Day-offs', '${record.dayOff} days'),
+                                _buildAttendanceItem(Icons.healing_outlined, 'Sick Leave', '${record.sickLeave} days'),
+                                _buildAttendanceItem(Icons.hourglass_bottom_outlined, 'Half-days', '${record.halfDays}'),
+                                _buildAttendanceItem(Icons.more_time_outlined, 'OT Days', '${record.otDays}'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Smart Prorate Banner
+                          if (record.isProrate)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF7ED),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFFED7AA)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.info, color: Color(0xFFEA580C), size: 18),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Smart Prorate applied: ${record.workedDays} eligible days (@ ฿${currency.format(record.dailyRate)}/day) • Reason: ${record.prorateReason}',
+                                      style: const TextStyle(fontSize: 12, color: Color(0xFFC2410C)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          // Earnings vs Deductions Columns
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Earnings
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '➕ Earnings',
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _buildPayslipLine(
+                                      record.isProrate ? 'Prorated Base Pay' : 'Base Salary',
+                                      '฿${currency.format(record.basePay)}',
+                                    ),
+                                    if (record.overtimePay > 0)
+                                      _buildPayslipLine('Overtime (OT)', '+฿${currency.format(record.overtimePay)}'),
+                                    if (record.bonusPay > 0)
+                                      _buildPayslipLine('Incentive / Bonus', '+฿${currency.format(record.bonusPay)}'),
+                                    if (record.otherExtra > 0)
+                                      _buildPayslipLine('Other Extra', '+฿${currency.format(record.otherExtra)}'),
+                                    const Divider(height: 16),
+                                    _buildPayslipLine(
+                                      'Total Earnings',
+                                      '฿${currency.format(record.basePay + record.totalExtra)}',
+                                      isBold: true,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 24),
+
+                              // Deductions
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '➖ Deductions',
+                                      style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444)),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _buildPayslipLine(
+                                      'Advance Payment',
+                                      record.advanceDeduction > 0 ? '-฿${currency.format(record.advanceDeduction)}' : '฿0.00',
+                                    ),
+                                    _buildPayslipLine(
+                                      'Work Permit / Passport',
+                                      record.workPermitDeduction > 0 ? '-฿${currency.format(record.workPermitDeduction)}' : '฿0.00',
+                                    ),
+                                    if (record.otherDeduction > 0)
+                                      _buildPayslipLine('Other Deductions', '-฿${currency.format(record.otherDeduction)}'),
+                                    const Divider(height: 16),
+                                    _buildPayslipLine(
+                                      'Total Deductions',
+                                      '-฿${currency.format(record.totalDeduction)}',
+                                      isBold: true,
+                                      color: const Color(0xFFEF4444),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Net Pay Banner
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'NET PAYOUT',
+                                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      'Social Security: Excluded',
+                                      style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  '฿${currency.format(record.netPay)}',
+                                  style: const TextStyle(
+                                    color: Color(0xFF38BDF8),
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-
-                        // ตารางแจกแจงรายรับ และ รายการหัก
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ฝั่งรายรับ
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '➕ รายการได้ (Earnings)',
-                                    style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _buildPayslipLine(
-                                    record.isProrate ? 'ค่าจ้างตามสัดส่วน' : 'เงินเดือนฐาน',
-                                    '฿${currency.format(record.basePay)}',
-                                  ),
-                                  if (record.overtimePay > 0)
-                                    _buildPayslipLine('ค่าล่วงเวลา (OT)', '+฿${currency.format(record.overtimePay)}'),
-                                  if (record.bonusPay > 0)
-                                    _buildPayslipLine('เบี้ยขยัน / โบนัส', '+฿${currency.format(record.bonusPay)}'),
-                                  if (record.otherExtra > 0)
-                                    _buildPayslipLine('รายได้พิเศษอื่นๆ', '+฿${currency.format(record.otherExtra)}'),
-                                  const Divider(height: 16),
-                                  _buildPayslipLine(
-                                    'รวมเงินได้',
-                                    '฿${currency.format(record.basePay + record.totalExtra)}',
-                                    isBold: true,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 24),
-
-                            // ฝั่งรายการหัก
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '➖ รายการหัก (Deductions)',
-                                    style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444)),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  _buildPayslipLine(
-                                    'เงินเบิกล่วงหน้า',
-                                    record.advanceDeduction > 0 ? '-฿${currency.format(record.advanceDeduction)}' : '฿0.00',
-                                  ),
-                                  _buildPayslipLine(
-                                    'ค่า Work Permit/Passport',
-                                    record.workPermitDeduction > 0 ? '-฿${currency.format(record.workPermitDeduction)}' : '฿0.00',
-                                  ),
-                                  if (record.otherDeduction > 0)
-                                    _buildPayslipLine('รายการหักอื่นๆ', '-฿${currency.format(record.otherDeduction)}'),
-                                  const Divider(height: 16),
-                                  _buildPayslipLine(
-                                    'รวมรายการหัก',
-                                    '-฿${currency.format(record.totalDeduction)}',
-                                    isBold: true,
-                                    color: const Color(0xFFEF4444),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-
-                        // ยอดสุทธิ (Net Pay Highlight)
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'ยอดรับสุทธิ (NET PAY)',
-                                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    'ไม่มีการหักประกันสังคม',
-                                    style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                              Text(
-                                '฿${currency.format(record.netPay)}',
-                                style: const TextStyle(
-                                  color: Color(0xFF38BDF8),
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                // ปุ่มแอ็กชัน
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                // Action Buttons: Save as Image, Copy for LINE, Adjustments
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  alignment: WrapAlignment.center,
                   children: [
+                    // Save as Image (PNG)
+                    ElevatedButton.icon(
+                      onPressed: _isExportingImage ? null : () => _savePayslipAsImage(record!),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0284C7),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: _isExportingImage
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.image),
+                      label: Text(_isExportingImage ? 'Saving...' : 'Save as Image (PNG)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+
+                    // Copy for LINE
                     ElevatedButton.icon(
                       onPressed: () {
                         final text = PayrollEngine.formatLinePayslip(record!);
                         Clipboard.setData(ClipboardData(text: text));
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('✅ คัดลอกข้อความสลิปสำหรับส่ง LINE เรียบร้อยแล้ว!'),
+                            content: Text('✅ Formatted Payslip copied to clipboard! Ready to paste in LINE.'),
                             backgroundColor: Color(0xFF10B981),
                           ),
                         );
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF06C755), // LINE Green
+                        backgroundColor: const Color(0xFF06C755),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      label: const Text('คัดลอกส่ง LINE (Copy for LINE)', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => _showEditAdjustmentsDialog(record!),
-                      style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Copy for LINE', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+
+                    // Adjust Pay & Attendance
+                    OutlinedButton.icon(
+                      onPressed: () => _showEditAdjustmentsDialog(record!),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                       icon: const Icon(Icons.tune),
-                      label: const Text('ปรับยอดเงินได้/หัก'),
+                      label: const Text('Adjust Pay & Attendance'),
                     ),
                   ],
                 ),
@@ -875,6 +958,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAttendanceItem(IconData icon, String label, String value) {
+    return Column(
+      children: [
+        Icon(icon, size: 16, color: const Color(0xFF16A34A)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF475569))),
+        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+      ],
     );
   }
 
@@ -915,14 +1009,14 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
     return Column(
       children: [
-        // แถบสถิติพนักงาน
+        // Employee Directory Header
         Container(
           color: Colors.white,
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
               Text(
-                'พนักงานทั้งหมด (${_employees.length} คน)',
+                'Employees (${_employees.length})',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(width: 12),
@@ -933,7 +1027,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  'ทำงานอยู่: $activeCount',
+                  'Active: $activeCount',
                   style: const TextStyle(fontSize: 12, color: Color(0xFF15803D), fontWeight: FontWeight.bold),
                 ),
               ),
@@ -945,7 +1039,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  'ลาออกแล้ว: $resignedCount',
+                  'Resigned: $resignedCount',
                   style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C), fontWeight: FontWeight.bold),
                 ),
               ),
@@ -957,13 +1051,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   foregroundColor: Colors.white,
                 ),
                 icon: const Icon(Icons.person_add, size: 18),
-                label: const Text('เพิ่มพนักงานใหม่'),
+                label: const Text('Add Employee'),
               ),
             ],
           ),
         ),
 
-        // รายการพนักงาน
+        // Employees List
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.all(16),
@@ -1019,17 +1113,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     children: [
                       const SizedBox(height: 2),
                       Text(
-                        'รอบจ่าย: ${emp.payGroup}  |  เงินเดือนฐาน: ฿${currency.format(emp.baseSalary)}  |  พักข้างนอก: ${emp.stayOutside}',
+                        'Group: ${emp.payGroup}  |  Base Salary: ฿${currency.format(emp.baseSalary)}  |  Stay Outside: ${emp.stayOutside}',
                         style: const TextStyle(fontSize: 12),
                       ),
                       if (emp.startDate != null)
                         Text(
-                          '📅 วันเริ่มงาน: ${df.format(emp.startDate!)}',
+                          '📅 Start Date: ${df.format(emp.startDate!)}',
                           style: const TextStyle(fontSize: 11, color: Color(0xFF0284C7)),
                         ),
                       if (emp.resignDate != null)
                         Text(
-                          '🚪 วันลาออก: ${df.format(emp.resignDate!)}',
+                          '🚪 Resign Date: ${df.format(emp.resignDate!)}',
                           style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626)),
                         ),
                       if (emp.note.isNotEmpty)
@@ -1054,7 +1148,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           children: [
                             Icon(Icons.date_range, size: 18),
                             SizedBox(width: 8),
-                            Text('กำหนดวันเริ่ม/วันลาออก (Prorate)'),
+                            Text('Set Start/Resign Dates (Prorate)'),
                           ],
                         ),
                       ),
@@ -1064,7 +1158,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           children: [
                             Icon(emp.isActive ? Icons.person_off : Icons.person, size: 18),
                             SizedBox(width: 8),
-                            Text(emp.isActive ? 'ปรับเป็นลาออก (Resigned)' : 'ปรับเป็นทำงานอยู่ (Active)'),
+                            Text(emp.isActive ? 'Mark as Resigned' : 'Mark as Active'),
                           ],
                         ),
                       ),
@@ -1084,6 +1178,14 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   // ===========================================================================
 
   void _showEditAdjustmentsDialog(PayrollRecord record) {
+    // Attendance Controllers
+    final workDaysCtrl = TextEditingController(text: record.workDays.toString());
+    final dayOffCtrl = TextEditingController(text: record.dayOff.toString());
+    final sickCtrl = TextEditingController(text: record.sickLeave.toString());
+    final halfCtrl = TextEditingController(text: record.halfDays.toString());
+    final otDaysCtrl = TextEditingController(text: record.otDays.toString());
+
+    // Financial Controllers
     final otCtrl = TextEditingController(text: record.overtimePay > 0 ? record.overtimePay.toString() : '');
     final bonusCtrl = TextEditingController(text: record.bonusPay > 0 ? record.bonusPay.toString() : '');
     final otherExtraCtrl = TextEditingController(text: record.otherExtra > 0 ? record.otherExtra.toString() : '');
@@ -1098,62 +1200,116 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: Text('ปรับรายการเงินได้/หัก: ${record.nickname} (${record.epCode})'),
+          title: Text('Adjust Pay & Attendance: ${record.nickname} (${record.epCode})'),
           content: SingleChildScrollView(
             child: SizedBox(
-              width: 480,
+              width: 520,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('➕ รายรับเสริม (บาท)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                  // Attendance Section
+                  const Text('🏖️ Attendance & Day-offs', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0369A1))),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: workDaysCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Work Days', border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: dayOffCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Day-offs', border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: sickCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Sick Leave', border: OutlineInputBorder()),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: halfCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Half-days', border: OutlineInputBorder()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          controller: otDaysCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'OT Days', border: OutlineInputBorder()),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+
+                  // Earnings Section
+                  const Text('➕ Earnings / Allowances (THB)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
                   const SizedBox(height: 8),
                   TextField(
                     controller: otCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'ค่าล่วงเวลา (OT)', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Overtime Pay (OT)', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: bonusCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'เบี้ยขยัน / โบนัส', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Attendance Bonus / Incentive', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: otherExtraCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'เงินเพิ่มอื่นๆ', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Other Extra Earnings', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: extraNoteCtrl,
-                    decoration: const InputDecoration(labelText: 'หมายเหตุเงินเพิ่ม', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Earnings Note', border: OutlineInputBorder()),
                   ),
                   const Divider(height: 24),
 
-                  const Text('➖ รายการหัก (บาท)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
+                  // Deductions Section
+                  const Text('➖ Deductions (THB)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
                   const SizedBox(height: 8),
                   TextField(
                     controller: advanceCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'เงินเบิกล่วงหน้า', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Advance Payment Deduction', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: wpCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'ค่าเอกสาร Work Permit / Passport', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Work Permit / Passport Fee', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: otherDedCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'รายการหักอื่นๆ', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Other Deductions', border: OutlineInputBorder()),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: dedNoteCtrl,
-                    decoration: const InputDecoration(labelText: 'หมายเหตุรายการหัก', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(labelText: 'Deduction Note', border: OutlineInputBorder()),
                   ),
                 ],
               ),
@@ -1162,11 +1318,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('ยกเลิก'),
+              child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: () {
                 setState(() {
+                  record.workDays = int.tryParse(workDaysCtrl.text) ?? record.workDays;
+                  record.dayOff = int.tryParse(dayOffCtrl.text) ?? record.dayOff;
+                  record.sickLeave = int.tryParse(sickCtrl.text) ?? record.sickLeave;
+                  record.halfDays = int.tryParse(halfCtrl.text) ?? record.halfDays;
+                  record.otDays = int.tryParse(otDaysCtrl.text) ?? record.otDays;
+
                   record.overtimePay = double.tryParse(otCtrl.text) ?? 0;
                   record.bonusPay = double.tryParse(bonusCtrl.text) ?? 0;
                   record.otherExtra = double.tryParse(otherExtraCtrl.text) ?? 0;
@@ -1179,7 +1341,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 });
                 Navigator.pop(ctx);
               },
-              child: const Text('บันทึก'),
+              child: const Text('Save Changes'),
             ),
           ],
         );
@@ -1200,7 +1362,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('เพิ่มพนักงานใหม่'),
+              title: const Text('Add New Employee'),
               content: SizedBox(
                 width: 400,
                 child: Column(
@@ -1208,27 +1370,27 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   children: [
                     TextField(
                       controller: epCtrl,
-                      decoration: const InputDecoration(labelText: 'รหัสพนักงาน (EP Code)'),
+                      decoration: const InputDecoration(labelText: 'Employee Code (EP Code)'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: nameCtrl,
-                      decoration: const InputDecoration(labelText: 'ชื่อเล่น (Nickname)'),
+                      decoration: const InputDecoration(labelText: 'Nickname'),
                     ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: salaryCtrl,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'เงินเดือนฐาน (บาท)'),
+                      decoration: const InputDecoration(labelText: 'Base Salary (THB)'),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: payGroup,
-                      decoration: const InputDecoration(labelText: 'รอบจ่ายเงินเดือน'),
+                      decoration: const InputDecoration(labelText: 'Pay Group Cycle'),
                       items: const [
-                        DropdownMenuItem(value: 'Date : 1', child: Text('รอบวันที่ 1 (2 ก่อนหน้า - 1 นี้)')),
-                        DropdownMenuItem(value: 'Date : 10', child: Text('รอบวันที่ 10 (11 ก่อนหน้า - 10 นี้)')),
-                        DropdownMenuItem(value: 'Date : 20', child: Text('รอบวันที่ 20 (21 ก่อนหน้า - 20 นี้)')),
+                        DropdownMenuItem(value: 'Date : 1', child: Text('Date : 1 (2nd prev - 1st current)')),
+                        DropdownMenuItem(value: 'Date : 10', child: Text('Date : 10 (11th prev - 10th current)')),
+                        DropdownMenuItem(value: 'Date : 20', child: Text('Date : 20 (21st prev - 20th current)')),
                       ],
                       onChanged: (val) {
                         if (val != null) setDialogState(() => payGroup = val);
@@ -1239,8 +1401,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       contentPadding: EdgeInsets.zero,
                       title: Text(
                         startDate == null
-                            ? 'กำหนดวันเริ่มงาน (เพื่อคิด Prorate อัตโนมัติ)'
-                            : 'วันเริ่มงาน: ${DateFormat('dd/MM/yyyy').format(startDate!)}',
+                            ? 'Set Start Date (For auto Smart Prorate)'
+                            : 'Start Date: ${DateFormat('dd/MM/yyyy').format(startDate!)}',
                       ),
                       trailing: IconButton(
                         icon: const Icon(Icons.calendar_month),
@@ -1261,7 +1423,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 ElevatedButton(
                   onPressed: () {
                     if (nameCtrl.text.isNotEmpty) {
@@ -1280,7 +1442,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       Navigator.pop(ctx);
                     }
                   },
-                  child: const Text('เพิ่มพนักงาน'),
+                  child: const Text('Save Employee'),
                 ),
               ],
             );
@@ -1301,12 +1463,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           builder: (context, setDialogState) {
             final df = DateFormat('dd/MM/yyyy');
             return AlertDialog(
-              title: Text('กำหนดวันเข้างาน / ลาออก: ${emp.nickname}'),
+              title: Text('Start & Resign Dates: ${emp.nickname}'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ListTile(
-                    title: Text(start == null ? 'ยังไม่ได้ระบุวันเริ่มงาน' : 'วันเริ่มงาน: ${df.format(start!)}'),
+                    title: Text(start == null ? 'No Start Date set' : 'Start Date: ${df.format(start!)}'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1334,7 +1496,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ),
                   const Divider(),
                   ListTile(
-                    title: Text(resign == null ? 'ยังไม่ได้ระบุวันลาออก' : 'วันลาออก: ${df.format(resign!)}'),
+                    title: Text(resign == null ? 'No Resign Date set' : 'Resign Date: ${df.format(resign!)}'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1363,7 +1525,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 ],
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 ElevatedButton(
                   onPressed: () {
                     final index = _employees.indexWhere((e) => e.epCode == emp.epCode);
@@ -1379,7 +1541,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     }
                     Navigator.pop(ctx);
                   },
-                  child: const Text('บันทึก'),
+                  child: const Text('Save Dates'),
                 ),
               ],
             );
@@ -1402,7 +1564,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('เปลี่ยนสถานะ ${emp.nickname} เป็น $newStatus เรียบร้อยแล้ว'),
+          content: Text('${emp.nickname} status updated to $newStatus'),
         ),
       );
     }

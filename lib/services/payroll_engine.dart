@@ -91,25 +91,23 @@ class PayrollEngine {
     if (employee.startDate != null && employee.startDate!.isAfter(cycle.startDate)) {
       effectiveStart = employee.startDate!;
       isProrate = true;
-      reasons.add('เริ่มงานใหม่ ${dateFormat.format(effectiveStart)}');
+      reasons.add('Started: ${dateFormat.format(effectiveStart)}');
     }
 
     if (employee.resignDate != null && employee.resignDate!.isBefore(cycle.endDate)) {
       effectiveEnd = employee.resignDate!;
       isProrate = true;
-      reasons.add('ลาออกวันที่ ${dateFormat.format(effectiveEnd)}');
+      reasons.add('Resigned: ${dateFormat.format(effectiveEnd)}');
     }
 
-    // 4. คำนวณวันทำงานและอัตราเฉลี่ยต่อวัน (เงินเดือนฐาน / 30)
+    // 4. Calculate working days and daily rate (Base Salary / 30)
     final dailyRate = employee.baseSalary / 30.0;
     int workedDays = 30;
     double basePay = employee.baseSalary;
 
     if (isProrate) {
-      // จำนวนวันจริงที่ทำงาน
       workedDays = effectiveEnd.difference(effectiveStart).inDays + 1;
       if (workedDays < 0) workedDays = 0;
-      // ปัดเศษให้เป็นจำนวนเต็มเพื่อง่ายต่อการจ่ายจริง
       basePay = (dailyRate * workedDays).roundToDouble();
     }
 
@@ -127,56 +125,68 @@ class PayrollEngine {
       workedDays: workedDays,
       prorateReason: reasons.join(' | '),
       basePay: basePay,
+      workDays: isProrate ? workedDays : 26,
+      dayOff: 4,
+      sickLeave: 0,
+      halfDays: 0,
+      otDays: 0,
     );
   }
 
-  /// สร้างข้อความสำหรับคัดลอกส่งเข้า LINE
+  /// Format payslip message for LINE
   static String formatLinePayslip(PayrollRecord record) {
     final currency = NumberFormat('#,##0.00', 'en_US');
     final df = DateFormat('dd/MM/yyyy');
 
     final buffer = StringBuffer();
-    buffer.writeln('📋 *ใบแจ้งเงินเดือน / PAYSLIP*');
+    buffer.writeln('📋 *PAYSLIP / SALARY SLIP*');
     buffer.writeln('🏢 *SIGNATURE PAYROLL*');
     buffer.writeln('────────────────────');
-    buffer.writeln('👤 พนักงาน: ${record.nickname} (${record.epCode})');
-    buffer.writeln('📅 งวด: ${record.period} (${record.payGroup})');
-    buffer.writeln('🗓️ รอบการทำงาน: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}');
-    buffer.writeln('💳 กำหนดจ่าย: ${df.format(record.payDate)}');
+    buffer.writeln('👤 Employee: ${record.nickname} (${record.epCode})');
+    buffer.writeln('📅 Period: ${record.period} (${record.payGroup})');
+    buffer.writeln('🗓️ Work Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}');
+    buffer.writeln('💳 Pay Date: ${df.format(record.payDate)}');
+    buffer.writeln('────────────────────');
+    buffer.writeln('🏖️ *Attendance & Time-off:*');
+    buffer.writeln('  • Work Days: ${record.workDays} days');
+    buffer.writeln('  • Day-offs: ${record.dayOff} days');
+    if (record.sickLeave > 0) buffer.writeln('  • Sick Leave: ${record.sickLeave} days');
+    if (record.halfDays > 0) buffer.writeln('  • Half-days: ${record.halfDays}');
+    if (record.otDays > 0) buffer.writeln('  • OT Days: ${record.otDays}');
     buffer.writeln('────────────────────');
 
     if (record.isProrate) {
-      buffer.writeln('⚠️ *คิดตามสัดส่วน (Prorate)*');
-      buffer.writeln('   เหตุผล: ${record.prorateReason}');
-      buffer.writeln('   วันทำงานจริง: ${record.workedDays} วัน (วันละ ${currency.format(record.dailyRate)} บ.)');
-      buffer.writeln('💵 ค่าจ้างตามสัดส่วน: ${currency.format(record.basePay)} บาท');
+      buffer.writeln('⚠️ *Smart Prorate Calculation:*');
+      buffer.writeln('   Details: ${record.prorateReason}');
+      buffer.writeln('   Eligible Days: ${record.workedDays} days (@ ${currency.format(record.dailyRate)} / day)');
+      buffer.writeln('💵 Prorated Pay: ${currency.format(record.basePay)} THB');
     } else {
-      buffer.writeln('💵 เงินเดือนฐาน: ${currency.format(record.basePay)} บาท');
+      buffer.writeln('💵 Base Salary: ${currency.format(record.basePay)} THB');
     }
 
     if (record.totalExtra > 0) {
       buffer.writeln('────────────────────');
-      buffer.writeln('➕ *รายได้เสริม / เงินเพิ่ม:*');
-      if (record.overtimePay > 0) buffer.writeln('  • ค่าล่วงเวลา (OT): +${currency.format(record.overtimePay)}');
-      if (record.bonusPay > 0) buffer.writeln('  • เบี้ยขยัน / โบนัส: +${currency.format(record.bonusPay)}');
-      if (record.otherExtra > 0) buffer.writeln('  • รายได้พิเศษอื่นๆ: +${currency.format(record.otherExtra)}');
+      buffer.writeln('➕ *Earnings / Allowances:*');
+      if (record.overtimePay > 0) buffer.writeln('  • Overtime (OT): +${currency.format(record.overtimePay)}');
+      if (record.bonusPay > 0) buffer.writeln('  • Bonus / Incentive: +${currency.format(record.bonusPay)}');
+      if (record.otherExtra > 0) buffer.writeln('  • Other Extra: +${currency.format(record.otherExtra)}');
       if (record.extraNote.isNotEmpty) buffer.writeln('    (${record.extraNote})');
     }
 
     if (record.totalDeduction > 0) {
       buffer.writeln('────────────────────');
-      buffer.writeln('➖ *รายการหัก:*');
-      if (record.advanceDeduction > 0) buffer.writeln('  • เงินเบิกล่วงหน้า: -${currency.format(record.advanceDeduction)}');
-      if (record.workPermitDeduction > 0) buffer.writeln('  • ค่าเอกสาร/Work Permit: -${currency.format(record.workPermitDeduction)}');
-      if (record.otherDeduction > 0) buffer.writeln('  • หักอื่นๆ: -${currency.format(record.otherDeduction)}');
+      buffer.writeln('➖ *Deductions:*');
+      if (record.advanceDeduction > 0) buffer.writeln('  • Advance Payment: -${currency.format(record.advanceDeduction)}');
+      if (record.workPermitDeduction > 0) buffer.writeln('  • Work Permit / Passport: -${currency.format(record.workPermitDeduction)}');
+      if (record.otherDeduction > 0) buffer.writeln('  • Other Deductions: -${currency.format(record.otherDeduction)}');
       if (record.deductionNote.isNotEmpty) buffer.writeln('    (${record.deductionNote})');
     }
 
     buffer.writeln('════════════════════');
-    buffer.writeln('💰 *ยอดโอนสุทธิ (NET PAY):*');
-    buffer.writeln('👉 *${currency.format(record.netPay)} บาท*');
+    buffer.writeln('💰 *NET PAY (ยอดโอนสุทธิ):*');
+    buffer.writeln('👉 *${currency.format(record.netPay)} THB*');
     buffer.writeln('════════════════════');
-    buffer.writeln('ขอบคุณสำหรับการทำงานอย่างเต็มที่ครับ 🙏');
+    buffer.writeln('Thank you for your dedication! 🙏');
 
     return buffer.toString();
   }
