@@ -4,28 +4,31 @@ import '../models/employee.dart';
 import '../models/payroll_record.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://127.0.0.1:8000/api';
+  // Supabase Cloud REST API Endpoint
+  static const String supabaseUrl = 'https://qsmigegcefcbohmufywh.supabase.co/rest/v1';
+  static const String supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzbWlnZWdjZWZjYm9obXVmeXdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwNDM4MDAsImV4cCI6MjEwNDYxOTgwMH0.jIEkmGeSVzht81fGEQnxOM-n9TGG7AFumkFEe5SVGTk';
 
-  // 1. Check API connection status
+  static Map<String, String> get _headers => {
+    'apikey': supabaseKey,
+    'Authorization': 'Bearer $supabaseKey',
+    'Content-Type': 'application/json',
+  };
+
+  // 1. Check API connection status (Supabase Cloud)
   static Future<bool> checkConnection() async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/health')).timeout(const Duration(seconds: 2));
+      final res = await http.get(
+        Uri.parse('$supabaseUrl/employees?select=ep_code&limit=1'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 4));
       return res.statusCode == 200;
     } catch (_) {
       return false;
     }
   }
 
-  // 2. Fetch all 24 periods from Database
+  // 2. Fetch all 24 periods
   static Future<List<String>> fetchPeriods() async {
-    try {
-      final res = await http.get(Uri.parse('$baseUrl/periods')).timeout(const Duration(seconds: 3));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final List<dynamic> list = data['periods'] ?? [];
-        return list.map((e) => e.toString()).toList();
-      }
-    } catch (_) {}
     return [
       '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06',
       '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12',
@@ -34,13 +37,16 @@ class ApiService {
     ];
   }
 
-  // 3. Fetch employees from Database
+  // 3. Fetch employees from Supabase Cloud
   static Future<List<Employee>?> fetchEmployees() async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/employees')).timeout(const Duration(seconds: 3));
+      final res = await http.get(
+        Uri.parse('$supabaseUrl/employees?select=*&order=ep_code.asc'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 5));
+
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final List<dynamic> list = data['employees'] ?? [];
+        final List<dynamic> list = jsonDecode(res.body);
         return list.map((item) {
           DateTime? sDate;
           DateTime? rDate;
@@ -67,24 +73,36 @@ class ApiService {
     return null;
   }
 
-  // 4. Fetch Attendance logs
+  // 4. Fetch Attendance logs from Supabase Cloud
   static Future<List<Map<String, dynamic>>> fetchAttendance({String? period, String? epCode}) async {
     try {
-      String url = '$baseUrl/attendance?';
-      if (period != null) url += 'period=$period&';
-      if (epCode != null) url += 'ep_code=$epCode&';
+      String query = '$supabaseUrl/attendance_log?select=*&order=date.desc';
+      if (epCode != null && epCode.isNotEmpty) {
+        query += '&ep_code=eq.$epCode';
+      }
+      if (period != null && period.length >= 7) {
+        try {
+          final parts = period.split('-');
+          final y = int.parse(parts[0]);
+          final m = int.parse(parts[1]);
+          final prevY = m > 1 ? y : y - 1;
+          final prevM = m > 1 ? m - 1 : 12;
+          final cycleStart = '${prevY.toString().padLeft(4, '0')}-${prevM.toString().padLeft(2, '0')}-02';
+          final cycleEnd = '${y.toString().padLeft(4, '0')}-${m.toString().padLeft(2, '0')}-20';
+          query += '&date=gte.$cycleStart&date=lte.$cycleEnd';
+        } catch (_) {}
+      }
 
-      final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+      final res = await http.get(Uri.parse(query), headers: _headers).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final List<dynamic> list = data['attendance'] ?? [];
+        final List<dynamic> list = jsonDecode(res.body);
         return list.map((e) => Map<String, dynamic>.from(e)).toList();
       }
     } catch (_) {}
     return [];
   }
 
-  // 5. Create new Attendance entry (Day-off, Sick, Half-day, OT)
+  // 5. Create new Attendance entry in Supabase Cloud
   static Future<bool> createAttendance({
     required String date,
     required String epCode,
@@ -96,8 +114,8 @@ class ApiService {
   }) async {
     try {
       final res = await http.post(
-        Uri.parse('$baseUrl/attendance'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$supabaseUrl/attendance_log'),
+        headers: _headers,
         body: jsonEncode({
           'date': date,
           'ep_code': epCode,
@@ -108,30 +126,33 @@ class ApiService {
           'note': note,
         }),
       );
-      return res.statusCode == 200;
+      return res.statusCode == 200 || res.statusCode == 201;
     } catch (_) {
       return false;
     }
   }
 
-  // 6. Fetch Adjustments (Advances, Work Permit, Bonuses)
+  // 6. Fetch Adjustments from Supabase Cloud
   static Future<List<Map<String, dynamic>>> fetchAdjustments({String? period, String? epCode}) async {
     try {
-      String url = '$baseUrl/adjustments?';
-      if (period != null) url += 'period=$period&';
-      if (epCode != null) url += 'ep_code=$epCode&';
+      String query = '$supabaseUrl/payroll_adjustments?select=*&order=due_date.desc';
+      if (period != null && period.isNotEmpty) {
+        query += '&period=eq.$period';
+      }
+      if (epCode != null && epCode.isNotEmpty) {
+        query += '&ep_code=eq.$epCode';
+      }
 
-      final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 3));
+      final res = await http.get(Uri.parse(query), headers: _headers).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final List<dynamic> list = data['adjustments'] ?? [];
+        final List<dynamic> list = jsonDecode(res.body);
         return list.map((e) => Map<String, dynamic>.from(e)).toList();
       }
     } catch (_) {}
     return [];
   }
 
-  // 7. Create new Adjustment (Advance, Work Permit, Bonus)
+  // 7. Create new Adjustment in Supabase Cloud
   static Future<bool> createAdjustment({
     required String period,
     required String dueDate,
@@ -145,8 +166,8 @@ class ApiService {
   }) async {
     try {
       final res = await http.post(
-        Uri.parse('$baseUrl/adjustments'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$supabaseUrl/payroll_adjustments'),
+        headers: _headers,
         body: jsonEncode({
           'period': period,
           'due_date': dueDate,
@@ -159,47 +180,52 @@ class ApiService {
           'status': status,
         }),
       );
-      return res.statusCode == 200;
+      return res.statusCode == 200 || res.statusCode == 201;
     } catch (_) {
       return false;
     }
   }
 
-  // 8. Sync and save calculated payroll summary to Excel
+  // 8. Sync and save calculated payroll summary to Supabase Cloud
   static Future<Map<String, dynamic>?> savePayrollSummary(List<PayrollRecord> records) async {
     try {
-      final payload = {
-        'records': records.map((r) => {
-          'period': r.period,
-          'ep_code': r.epCode,
-          'nickname': r.nickname,
-          'pay_type': r.isProrate ? 'Prorated' : 'Full Month',
-          'base_salary': r.baseSalary,
-          'work_days': r.workDays,
-          'day_off': r.dayOff,
-          'sick': r.sickLeave,
-          'half_day': r.halfDays,
-          'ot_days': r.otDays,
-          'base_pay': r.basePay,
-          'total_extra': r.totalExtra,
-          'total_deduction': r.totalDeduction,
-          'net_pay': r.netPay,
-          'status': r.status,
-          'note': r.isProrate ? r.prorateReason : '',
-        }).toList(),
-      };
+      final payload = records.map((r) => {
+        'period': r.period,
+        'ep_code': r.epCode,
+        'nickname': r.nickname,
+        'pay_type': r.isProrate ? 'Prorated' : 'Full Month',
+        'base_salary': r.baseSalary,
+        'work_days': r.workDays,
+        'day_off': r.dayOff,
+        'sick': r.sickLeave,
+        'half_day': r.halfDays,
+        'ot_days': r.otDays,
+        'base_pay': r.basePay,
+        'total_extra': r.totalExtra,
+        'total_deduction': r.totalDeduction,
+        'net_pay': r.netPay,
+        'status': r.status,
+        'note': r.isProrate ? r.prorateReason : '',
+      }).toList();
+
+      final upsertHeaders = Map<String, String>.from(_headers);
+      upsertHeaders['Prefer'] = 'resolution=merge-duplicates';
 
       final res = await http.post(
-        Uri.parse('$baseUrl/payroll-summary'),
-        headers: {'Content-Type': 'application/json'},
+        Uri.parse('$supabaseUrl/payroll_summary?on_conflict=period,ep_code'),
+        headers: upsertHeaders,
         body: jsonEncode(payload),
       ).timeout(const Duration(seconds: 10));
 
-      if (res.statusCode == 200) {
-        return jsonDecode(res.body);
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return {
+          'message': 'Payroll summary saved to Supabase Cloud successfully',
+          'total': records.length,
+          'updated': records.length,
+          'created': 0,
+        };
       }
     } catch (_) {}
     return null;
   }
 }
-

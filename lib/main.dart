@@ -261,7 +261,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✅ Synced ${res['total']} records to Excel sheet "Payroll_Summary" (Updated: ${res['updated']}, New: ${res['created']})'),
+              content: Text('✅ Synced ${res['total']} records to Supabase Cloud Database!'),
               backgroundColor: const Color(0xFF10B981),
               duration: const Duration(seconds: 4),
             ),
@@ -271,7 +271,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('⚠️ Failed to sync with Excel server. Ensure server.py is running.'),
+              content: Text('⚠️ Failed to sync with Cloud Database.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -380,7 +380,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          _isApiOnline ? 'REST API Connected' : 'Local Standalone Mode',
+                          _isApiOnline ? 'Supabase Cloud Connected ⚡' : 'Offline Local Mode',
                           style: TextStyle(
                             fontSize: 11,
                             color: _isApiOnline ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D),
