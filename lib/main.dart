@@ -475,6 +475,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         ],
       ),
       selectedColor: const Color(0xFF0284C7),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
       labelStyle: TextStyle(color: isSelected ? Colors.white : const Color(0xFF334155)),
       onSelected: (_) {
         setState(() {
