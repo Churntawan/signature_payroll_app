@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/employee.dart';
+import '../models/payroll_record.dart';
 
 class ApiService {
   static const String baseUrl = 'http://127.0.0.1:8000/api';
@@ -163,4 +164,42 @@ class ApiService {
       return false;
     }
   }
+
+  // 8. Sync and save calculated payroll summary to Excel
+  static Future<Map<String, dynamic>?> savePayrollSummary(List<PayrollRecord> records) async {
+    try {
+      final payload = {
+        'records': records.map((r) => {
+          'period': r.period,
+          'ep_code': r.epCode,
+          'nickname': r.nickname,
+          'pay_type': r.isProrate ? 'Prorated' : 'Full Month',
+          'base_salary': r.baseSalary,
+          'work_days': r.workDays,
+          'day_off': r.dayOff,
+          'sick': r.sickLeave,
+          'half_day': r.halfDays,
+          'ot_days': r.otDays,
+          'base_pay': r.basePay,
+          'total_extra': r.totalExtra,
+          'total_deduction': r.totalDeduction,
+          'net_pay': r.netPay,
+          'status': r.status,
+          'note': r.isProrate ? r.prorateReason : '',
+        }).toList(),
+      };
+
+      final res = await http.post(
+        Uri.parse('$baseUrl/payroll-summary'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      }
+    } catch (_) {}
+    return null;
+  }
 }
+

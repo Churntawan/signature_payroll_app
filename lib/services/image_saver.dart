@@ -6,4 +6,9 @@ class ImageSaver {
   static void savePng(Uint8List bytes, String fileName) {
     savePngFile(bytes, fileName);
   }
+
+  static void saveCsv(String content, String fileName) {
+    saveCsvFile(content, fileName);
+  }
 }
+

@@ -54,6 +54,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
   final GlobalKey _payslipKey = GlobalKey();
   bool _isExportingImage = false;
+  bool _isSyncingExcel = false;
   bool _isApiOnline = false;
 
   late List<Employee> _employees;
@@ -120,13 +121,31 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         period: _selectedPeriod,
       );
       if (rec != null) {
-        // Aggregate real attendance logs
-        final empAtt = _attendanceLogs.where((a) => a['ep_code'] == emp.epCode).toList();
+        // Aggregate real attendance logs strictly within this employee's pay cycle dates
+        final empAtt = _attendanceLogs.where((a) {
+          if (a['ep_code'] != emp.epCode) return false;
+          final dStr = a['date']?.toString() ?? '';
+          if (dStr.isEmpty) return false;
+          try {
+            final d = DateTime.parse(dStr);
+            final dOnly = DateTime(d.year, d.month, d.day);
+            final startOnly = DateTime(rec.cycleStartDate.year, rec.cycleStartDate.month, rec.cycleStartDate.day);
+            final endOnly = DateTime(rec.cycleEndDate.year, rec.cycleEndDate.month, rec.cycleEndDate.day);
+            return (dOnly.isAtSameMomentAs(startOnly) || dOnly.isAfter(startOnly)) &&
+                   (dOnly.isAtSameMomentAs(endOnly) || dOnly.isBefore(endOnly));
+          } catch (_) {
+            return false;
+          }
+        }).toList();
+
         if (empAtt.isNotEmpty) {
-          rec.dayOff = empAtt.where((a) => a['category'] == 'Day-off').length;
-          rec.sickLeave = empAtt.where((a) => a['category'] == 'Sick').length;
+          rec.dayOff = empAtt.where((a) => a['category'] == 'Day-off').fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0)).round();
+          rec.sickLeave = empAtt.where((a) => a['category'] == 'Sick').fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0)).round();
           rec.halfDays = empAtt.where((a) => a['category'] == 'Half-day').length;
-          rec.otDays = empAtt.where((a) => a['category'] == 'OT Days').length;
+          rec.otDays = empAtt.where((a) => a['category'] == 'OT Days').fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0)).round();
+          if (!rec.isProrate) {
+            rec.workDays = (30 - rec.dayOff - rec.sickLeave).clamp(0, 30);
+          }
         }
 
         // Aggregate real adjustments
@@ -218,6 +237,101 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     } finally {
       if (mounted) setState(() => _isExportingImage = false);
     }
+  }
+
+  Future<void> _syncPayrollToExcel() async {
+    setState(() => _isSyncingExcel = true);
+    try {
+      final records = _payrollRecords.values.toList();
+      if (records.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No records to sync.'), backgroundColor: Colors.orange),
+          );
+        }
+        return;
+      }
+      final res = await ApiService.savePayrollSummary(records);
+      if (res != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Synced ${res['total']} records to Excel sheet "Payroll_Summary" (Updated: ${res['updated']}, New: ${res['created']})'),
+              backgroundColor: const Color(0xFF10B981),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Failed to sync with Excel server. Ensure server.py is running.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error syncing: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncingExcel = false);
+    }
+  }
+
+  void _exportBankSummaryCsv() {
+    final records = _filteredRecords;
+    if (records.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No records to export.'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    final buffer = StringBuffer();
+    // CSV Header (UTF-8 BOM will be prepended by ImageSaver.saveCsv)
+    buffer.writeln('Period,EP Code,Nickname,Pay Group,Pay Date,Base Salary,Prorated,Work Days,Day Off,Sick Leave,Half Days,OT Days,Base Pay,Overtime Pay,Bonus Pay,Other Extra,Advance Deduction,Work Permit Deduction,Other Deduction,Net Pay,Status');
+
+    final df = DateFormat('yyyy-MM-dd');
+    for (final r in records) {
+      buffer.writeln(
+        '${r.period},'
+        '${r.epCode},'
+        '"${r.nickname}",'
+        '"${r.payGroup}",'
+        '${df.format(r.payDate)},'
+        '${r.baseSalary.toStringAsFixed(2)},'
+        '${r.isProrate ? "Yes" : "No"},'
+        '${r.workDays},'
+        '${r.dayOff},'
+        '${r.sickLeave},'
+        '${r.halfDays},'
+        '${r.otDays},'
+        '${r.basePay.toStringAsFixed(2)},'
+        '${r.overtimePay.toStringAsFixed(2)},'
+        '${r.bonusPay.toStringAsFixed(2)},'
+        '${r.otherExtra.toStringAsFixed(2)},'
+        '${r.advanceDeduction.toStringAsFixed(2)},'
+        '${r.workPermitDeduction.toStringAsFixed(2)},'
+        '${r.otherDeduction.toStringAsFixed(2)},'
+        '${r.netPay.toStringAsFixed(2)},'
+        '${r.status}'
+      );
+    }
+
+    final fileName = 'payroll_summary_${_selectedPeriod}_${_selectedGroupFilter.replaceAll(' ', '_')}.csv';
+    ImageSaver.saveCsv(buffer.toString(), fileName);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('✅ Exported Bank & Accounting CSV: $fileName'),
+        backgroundColor: const Color(0xFF10B981),
+      ),
+    );
   }
 
   @override
@@ -360,20 +474,53 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       children: [
         Container(
           color: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildFilterChip('All Groups'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Date : 1', subtitle: '2nd prev - 1st current'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Date : 10', subtitle: '11th prev - 10th current'),
-                const SizedBox(width: 8),
-                _buildFilterChip('Date : 20', subtitle: '21st prev - 20th current'),
-              ],
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('All Groups'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Date : 1', subtitle: '2nd prev - 1st current'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Date : 10', subtitle: '11th prev - 10th current'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Date : 20', subtitle: '21st prev - 20th current'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: _exportBankSummaryCsv,
+                icon: const Icon(Icons.file_download_outlined, size: 18),
+                label: const Text('Export Bank / CSV'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0284C7),
+                  side: const BorderSide(color: Color(0xFF0284C7)),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                onPressed: _isSyncingExcel ? null : _syncPayrollToExcel,
+                icon: _isSyncingExcel
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.sync, size: 18),
+                label: Text(_isSyncingExcel ? 'Syncing...' : 'Sync to Excel Summary'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+            ],
           ),
         ),
         Container(
@@ -514,7 +661,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                       ),
                                     ),
                                   Text(
-                                    'Base: ฿${currency.format(rec.basePay)} | Extra: +฿${currency.format(rec.totalExtra)} | Ded: -฿${currency.format(rec.totalDeduction)} | Off: ${rec.dayOff}d',
+                                    'Base: ฿${currency.format(rec.basePay)} | +Extra: ฿${currency.format(rec.totalExtra)} | -Ded: ฿${currency.format(rec.totalDeduction)} | Work: ${rec.workDays}d | Off: ${rec.dayOff}d${rec.sickLeave > 0 ? " | Sick: ${rec.sickLeave}d" : ""}${rec.otDays > 0 ? " | OT: ${rec.otDays}d" : ""}',
                                     style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                                   ),
                                 ],
