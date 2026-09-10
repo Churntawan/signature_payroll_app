@@ -46,4 +46,35 @@ class Employee {
       note: note ?? this.note,
     );
   }
+
+  /// Get list of preferred weekday day-offs (1 = Mon, 7 = Sun)
+  List<int> get preferredDayOffs {
+    if (note.isEmpty) return [];
+    final match = RegExp(r'\[DayOff:([0-9,]+)\]').firstMatch(note);
+    if (match != null) {
+      final daysStr = match.group(1);
+      if (daysStr != null && daysStr.isNotEmpty) {
+        return daysStr
+            .split(',')
+            .map((s) => int.tryParse(s.trim()))
+            .whereType<int>()
+            .toList();
+      }
+    }
+    return [];
+  }
+
+  /// Create a new note string with updated preferred day-offs tag
+  String withPreferredDayOffs(List<int> days) {
+    var clean = note.replaceAll(RegExp(r'\[DayOff:[0-9,]*\]'), '').trim();
+    if (days.isEmpty) return clean;
+    days.sort();
+    final tag = '[DayOff:${days.join(',')}]';
+    return clean.isEmpty ? tag : '$clean $tag';
+  }
+
+  /// Return a new Employee instance with updated preferred day-offs
+  Employee copyWithPreferredDayOffs(List<int> days) {
+    return copyWith(note: withPreferredDayOffs(days));
+  }
 }

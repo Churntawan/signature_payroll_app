@@ -305,4 +305,43 @@ class ApiService {
       return false;
     }
   }
+
+  // 12. Bulk create Attendance records in Supabase Cloud
+  static Future<bool> batchCreateAttendance(List<Map<String, dynamic>> records) async {
+    if (records.isEmpty) return true;
+    try {
+      final upsertHeaders = Map<String, String>.from(_headers);
+      upsertHeaders['Prefer'] = 'resolution=merge-duplicates';
+
+      final res = await http.post(
+        Uri.parse('$supabaseUrl/attendance_log'),
+        headers: upsertHeaders,
+        body: jsonEncode(records),
+      ).timeout(const Duration(seconds: 15));
+      return res.statusCode == 200 || res.statusCode == 201 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 13. Clear existing Day-offs for a date range in Supabase Cloud
+  static Future<bool> clearDayOffsForRange({
+    required String startDate,
+    required String endDate,
+    String? epCode,
+  }) async {
+    try {
+      String query = '$supabaseUrl/attendance_log?category=eq.Day-off&date=gte.$startDate&date=lte.$endDate';
+      if (epCode != null && epCode.isNotEmpty) {
+        query += '&ep_code=eq.$epCode';
+      }
+      final res = await http.delete(
+        Uri.parse(query),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 10));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
 }
