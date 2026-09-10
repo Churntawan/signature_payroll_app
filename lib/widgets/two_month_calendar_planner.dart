@@ -5,12 +5,14 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
   final String period; // e.g. '2026-09'
   final List<Map<String, dynamic>> attendanceLogs;
   final Function(DateTime date) onAddAttendance;
+  final Function(DateTime monthDate)? onAutoScheduleMonth;
 
   const TwoMonthCalendarPlanner({
     super.key,
     required this.period,
     required this.attendanceLogs,
     required this.onAddAttendance,
+    this.onAutoScheduleMonth,
   });
 
   @override
@@ -197,35 +199,65 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
                     color: isPrevMonth ? const Color(0xFF64748B) : const Color(0xFF0284C7),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Text(
-                  monthName,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
                 const SizedBox(width: 8),
-                if (isPrevMonth)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('Previous Month', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                  )
-                else
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE0F2FE),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('Current Period Month', style: TextStyle(fontSize: 10, color: Color(0xFF0369A1), fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              monthName,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isPrevMonth ? const Color(0xFFF1F5F9) : const Color(0xFFE0F2FE),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              isPrevMonth ? 'Previous' : 'Current',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: isPrevMonth ? const Color(0xFF64748B) : const Color(0xFF0284C7),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        '🏖️ หยุด $dayOffCount วัน  •  🤒 ลา $sickCount วัน',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      ),
+                    ],
                   ),
-                const Spacer(),
-                Text(
-                  'Off: $dayOffCount  |  Sick: $sickCount',
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
                 ),
+                if (onAutoScheduleMonth != null) ...[
+                  const SizedBox(width: 6),
+                  ElevatedButton.icon(
+                    onPressed: () => onAutoScheduleMonth!(monthDate),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4F46E5),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.auto_awesome, size: 14),
+                    label: Text(
+                      '⚡ จัดวันหยุด ${DateFormat('MMM').format(monthDate)}',
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 14),

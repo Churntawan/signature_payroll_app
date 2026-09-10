@@ -1254,6 +1254,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   period: _selectedPeriod,
                   attendanceLogs: _attendanceLogs,
                   onAddAttendance: (date) => _showLogAttendanceDialog(initialDate: date),
+                  onAutoScheduleMonth: (monthDate) => _showAutoScheduleForMonthDialog(monthDate),
                 )
               : (_attendanceLogs.isEmpty
                   ? const Center(
@@ -2150,8 +2151,445 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   }
 
   // ===========================================================================
-  // DIALOGS: AUTO-SCHEDULE DAY-OFFS, ADD ATTENDANCE, ADD ADJUSTMENT, ADD EMPLOYEE
+  // DIALOGS: AUTO-SCHEDULE DAY-OFFS (MONTH-BY-MONTH & PERIOD), ADD ATTENDANCE
   // ===========================================================================
+
+  void _showAutoScheduleForMonthDialog(DateTime targetMonth) {
+    final activeEmps = _employees.where((e) => e.isActive).toList();
+    if (activeEmps.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่มีพนักงานที่กำลังทำงาน (Active) ในระบบ')),
+      );
+      return;
+    }
+
+    final monthName = DateFormat('MMMM yyyy').format(targetMonth);
+    final monthPrefix = '${targetMonth.year}-${targetMonth.month.toString().padLeft(2, '0')}';
+    final daysInMonth = DateTime(targetMonth.year, targetMonth.month + 1, 0).day;
+    final shortDf = DateFormat('dd/MM');
+
+    // Weekday definitions: 1 = Monday to 7 = Sunday
+    const weekdayDefs = [
+      {'day': 1, 'short': 'จ.', 'name': 'วันจันทร์'},
+      {'day': 2, 'short': 'อ.', 'name': 'วันอังคาร'},
+      {'day': 3, 'short': 'พ.', 'name': 'วันพุธ'},
+      {'day': 4, 'short': 'พฤ.', 'name': 'วันพฤหัสฯ'},
+      {'day': 5, 'short': 'ศ.', 'name': 'วันศุกร์'},
+      {'day': 6, 'short': 'ส.', 'name': 'วันเสาร์'},
+      {'day': 7, 'short': 'อา.', 'name': 'วันอาทิตย์'},
+    ];
+
+    // Read existing day-offs for each employee that fall within this target calendar month
+    final Map<String, Set<int>> chosenDays = {};
+    for (final emp in activeEmps) {
+      final existingMonthDayOffs = _attendanceLogs
+          .where((a) => a['ep_code'] == emp.epCode && a['category'] == 'Day-off' && (a['date']?.toString() ?? '').startsWith(monthPrefix))
+          .toList();
+      final Set<int> weekdays = {};
+      for (final a in existingMonthDayOffs) {
+        final dStr = a['date']?.toString() ?? '';
+        if (dStr.isNotEmpty) {
+          try {
+            final d = DateTime.parse(dStr);
+            weekdays.add(d.weekday);
+          } catch (_) {}
+        }
+      }
+      chosenDays[emp.epCode] = weekdays;
+    }
+
+    bool clearExistingDayOffs = true;
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDlgState) {
+            int totalGeneratedDays = 0;
+            for (final emp in activeEmps) {
+              final empDays = chosenDays[emp.epCode] ?? {};
+              for (int day = 1; day <= daysInMonth; day++) {
+                final d = DateTime(targetMonth.year, targetMonth.month, day);
+                if (emp.startDate != null) {
+                  final startOnly = DateTime(emp.startDate!.year, emp.startDate!.month, emp.startDate!.day);
+                  if (d.isBefore(startOnly)) continue;
+                }
+                if (emp.resignDate != null) {
+                  final resignOnly = DateTime(emp.resignDate!.year, emp.resignDate!.month, emp.resignDate!.day);
+                  if (d.isAfter(resignOnly)) continue;
+                }
+                if (empDays.contains(d.weekday)) {
+                  totalGeneratedDays++;
+                }
+              }
+            }
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEEF2FF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.auto_awesome, color: Color(0xFF4F46E5), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'จัดตารางวันหยุดเดือน $monthName',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                        ),
+                        Text(
+                          'วางแผนวันหยุดเฉพาะเดือน $monthName (วันที่ 1 - $daysInMonth)',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.normal),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 640,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.calendar_month, size: 16, color: Color(0xFF0369A1)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'กำหนดวันหยุดของเดือน $monthName โดยเฉพาะ:',
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'เลือกวันที่พนักงานหยุดในแต่ละสัปดาห์ ระบบจะสร้างวันหยุดสำหรับเดือน $monthName ให้อัตโนมัติ โดยไม่ส่งผลกระทบต่อเดือนอื่น',
+                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                            ),
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: isSubmitting
+                                  ? null
+                                  : () => setDlgState(() => clearExistingDayOffs = !clearExistingDayOffs),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: Checkbox(
+                                      value: clearExistingDayOffs,
+                                      onChanged: isSubmitting
+                                          ? null
+                                          : (v) => setDlgState(() => clearExistingDayOffs = v ?? true),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'ล้างวันหยุดเดิมเฉพาะในเดือน $monthName ก่อนสร้างใหม่',
+                                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'พนักงานที่กำลังทำงาน (Active Staff):',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF334155)),
+                      ),
+                      const SizedBox(height: 6),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: activeEmps.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, idx) {
+                          final emp = activeEmps[idx];
+                          final empDays = chosenDays[emp.epCode] ?? {};
+
+                          // Calculate all dates in this month
+                          final List<DateTime> generatedDates = [];
+                          for (int day = 1; day <= daysInMonth; day++) {
+                            final d = DateTime(targetMonth.year, targetMonth.month, day);
+                            if (emp.startDate != null) {
+                              final startOnly = DateTime(emp.startDate!.year, emp.startDate!.month, emp.startDate!.day);
+                              if (d.isBefore(startOnly)) continue;
+                            }
+                            if (emp.resignDate != null) {
+                              final resignOnly = DateTime(emp.resignDate!.year, emp.resignDate!.month, emp.resignDate!.day);
+                              if (d.isAfter(resignOnly)) continue;
+                            }
+                            if (empDays.contains(d.weekday)) {
+                              generatedDates.add(d);
+                            }
+                          }
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 14,
+                                      backgroundColor: const Color(0xFFE0F2FE),
+                                      foregroundColor: const Color(0xFF0369A1),
+                                      child: Text(
+                                        emp.nickname.isNotEmpty ? emp.nickname[0] : '?',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '${emp.nickname} (${emp.epCode})',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                                          ),
+                                          Text(
+                                            'กลุ่ม ${emp.payGroup} • เดือน $monthName',
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: generatedDates.isNotEmpty ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        'หยุด ${generatedDates.length} วัน',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: generatedDates.isNotEmpty ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                // Weekday toggles
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: weekdayDefs.map((def) {
+                                      final dayNum = def['day'] as int;
+                                      final shortName = def['short'] as String;
+                                      final isSelected = empDays.contains(dayNum);
+
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 6),
+                                        child: InkWell(
+                                          onTap: isSubmitting
+                                              ? null
+                                              : () {
+                                                  setDlgState(() {
+                                                    if (isSelected) {
+                                                      empDays.remove(dayNum);
+                                                    } else {
+                                                      empDays.add(dayNum);
+                                                    }
+                                                    chosenDays[emp.epCode] = empDays;
+                                                  });
+                                                },
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: isSelected ? const Color(0xFF4F46E5) : const Color(0xFFF1F5F9),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(
+                                                color: isSelected ? const Color(0xFF4338CA) : const Color(0xFFE2E8F0),
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (isSelected)
+                                                  const Padding(
+                                                    padding: EdgeInsets.only(right: 4),
+                                                    child: Icon(Icons.check, size: 12, color: Colors.white),
+                                                  ),
+                                                Text(
+                                                  shortName,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                                    color: isSelected ? Colors.white : const Color(0xFF334155),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                if (generatedDates.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '📅 วันหยุดเดือนนี้: ${generatedDates.map((d) => shortDf.format(d)).join(', ')} (${generatedDates.length} วัน)',
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                                    ),
+                                  )
+                                else
+                                  const Text(
+                                    'แตะเลือกวันด้านบน เช่น [จ.] เพื่อกำหนดวันหยุดในเดือนนี้',
+                                    style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                  child: const Text('ยกเลิก (Cancel)'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          setDlgState(() => isSubmitting = true);
+                          final messenger = ScaffoldMessenger.of(context);
+                          final navigator = Navigator.of(ctx);
+
+                          try {
+                            final List<Map<String, dynamic>> allBatchRecords = [];
+
+                            for (final emp in activeEmps) {
+                              final empDays = chosenDays[emp.epCode] ?? {};
+
+                              // Clear old day-offs strictly within this month's date range (e.g. 2026-10-01 to 2026-10-31)
+                              if (clearExistingDayOffs) {
+                                final startStr = '$monthPrefix-01';
+                                final endStr = '$monthPrefix-$daysInMonth';
+                                await ApiService.clearDayOffsForRange(
+                                  startDate: startStr,
+                                  endDate: endStr,
+                                  epCode: emp.epCode,
+                                );
+                              }
+
+                              for (int day = 1; day <= daysInMonth; day++) {
+                                final d = DateTime(targetMonth.year, targetMonth.month, day);
+                                if (emp.startDate != null) {
+                                  final startOnly = DateTime(emp.startDate!.year, emp.startDate!.month, emp.startDate!.day);
+                                  if (d.isBefore(startOnly)) continue;
+                                }
+                                if (emp.resignDate != null) {
+                                  final resignOnly = DateTime(emp.resignDate!.year, emp.resignDate!.month, emp.resignDate!.day);
+                                  if (d.isAfter(resignOnly)) continue;
+                                }
+
+                                if (empDays.contains(d.weekday)) {
+                                  allBatchRecords.add({
+                                    'date': DateFormat('yyyy-MM-dd').format(d),
+                                    'ep_code': emp.epCode,
+                                    'nickname': emp.nickname,
+                                    'category': 'Day-off',
+                                    'period': _selectedPeriod,
+                                    'shift': 'Normal',
+                                    'units': 1.0,
+                                    'note': 'วันหยุดประจำเดือน $monthName',
+                                  });
+                                }
+                              }
+                            }
+
+                            if (allBatchRecords.isNotEmpty) {
+                              await ApiService.batchCreateAttendance(allBatchRecords);
+                            }
+
+                            await _fetchDataAndRecalculate();
+
+                            navigator.pop();
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text('✅ จัดตารางวันหยุดเดือน $monthName สำเร็จแล้ว (${allBatchRecords.length} วัน) ไม่กระทบเดือนอื่น'),
+                                backgroundColor: const Color(0xFF10B981),
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
+                          } catch (e) {
+                            setDlgState(() => isSubmitting = false);
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text('⚠️ เกิดข้อผิดพลาด: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  icon: isSubmitting
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.flash_on, size: 18),
+                  label: Text(isSubmitting ? 'กำลังสร้าง...' : '⚡ บันทึกวันหยุดเดือน $monthName ($totalGeneratedDays วัน)'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   void _showAutoScheduleDayOffsDialog() {
     final activeEmps = _employees.where((e) => e.isActive).toList();
