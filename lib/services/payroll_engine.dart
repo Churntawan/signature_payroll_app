@@ -133,6 +133,16 @@ class PayrollEngine {
     );
   }
 
+  static String _formatShortDate(String? dStr) {
+    if (dStr == null || dStr.isEmpty) return '';
+    try {
+      final d = DateTime.parse(dStr);
+      return DateFormat('dd/MM').format(d);
+    } catch (_) {
+      return dStr;
+    }
+  }
+
   /// Format payslip message for LINE
   static String formatLinePayslip(PayrollRecord record) {
     final currency = NumberFormat('#,##0.00', 'en_US');
@@ -147,12 +157,50 @@ class PayrollEngine {
     buffer.writeln('🗓️ Work Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}');
     buffer.writeln('💳 Pay Date: ${df.format(record.payDate)}');
     buffer.writeln('────────────────────');
-    buffer.writeln('🏖️ *Attendance & Time-off:*');
+    buffer.writeln('🏖️ *Attendance & Time-off (สถิติและวันหยุด/วันลา):*');
     buffer.writeln('  • Work Days: ${record.workDays} days');
-    buffer.writeln('  • Day-offs: ${record.dayOff} days');
-    if (record.sickLeave > 0) buffer.writeln('  • Sick Leave: ${record.sickLeave} days');
-    if (record.halfDays > 0) buffer.writeln('  • Half-days: ${record.halfDays}');
-    if (record.otDays > 0) buffer.writeln('  • OT Days: ${record.otDays}');
+
+    final offDates = record.dayOffLogs
+        .map((l) => _formatShortDate(l['date']?.toString()))
+        .where((s) => s.isNotEmpty)
+        .join(', ');
+    buffer.writeln('  • Day-offs: ${record.dayOff} days${offDates.isNotEmpty ? ' ($offDates)' : ''}');
+
+    if (record.sickLeave > 0 || record.sickLogs.isNotEmpty) {
+      final sickDates = record.sickLogs.map((l) {
+        final d = _formatShortDate(l['date']?.toString());
+        final note = l['note']?.toString() ?? '';
+        return note.isNotEmpty ? '$d [$note]' : d;
+      }).where((s) => s.isNotEmpty).join(', ');
+      final count = record.sickLeave > 0 ? record.sickLeave : record.sickLogs.length;
+      buffer.writeln('  • Sick Leave: $count days${sickDates.isNotEmpty ? ' ($sickDates)' : ''}');
+    }
+    if (record.halfDays > 0 || record.halfDayLogs.isNotEmpty) {
+      final halfDates = record.halfDayLogs
+          .map((l) => _formatShortDate(l['date']?.toString()))
+          .where((s) => s.isNotEmpty)
+          .join(', ');
+      final count = record.halfDays > 0 ? record.halfDays : record.halfDayLogs.length;
+      buffer.writeln('  • Half-days: $count${halfDates.isNotEmpty ? ' ($halfDates)' : ''}');
+    }
+    if (record.otDays > 0 || record.otDayLogs.isNotEmpty) {
+      final otDates = record.otDayLogs
+          .map((l) => _formatShortDate(l['date']?.toString()))
+          .where((s) => s.isNotEmpty)
+          .join(', ');
+      final count = record.otDays > 0 ? record.otDays : record.otDayLogs.length;
+      buffer.writeln('  • OT Days: $count${otDates.isNotEmpty ? ' ($otDates)' : ''}');
+    }
+    final otherLogs = record.otherLeaveLogs;
+    if (otherLogs.isNotEmpty) {
+      final otherDates = otherLogs.map((l) {
+        final cat = l['category'] ?? 'Leave';
+        final d = _formatShortDate(l['date']?.toString());
+        final note = l['note']?.toString() ?? '';
+        return '$cat: $d${note.isNotEmpty ? ' [$note]' : ''}';
+      }).join(', ');
+      buffer.writeln('  • Other Leaves: $otherDates');
+    }
     buffer.writeln('────────────────────');
 
     if (record.isProrate) {

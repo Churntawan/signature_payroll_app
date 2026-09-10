@@ -25,6 +25,7 @@ class PayrollRecord {
   int sickLeave;
   int halfDays;
   int otDays;
+  List<Map<String, dynamic>> attendanceDetails;
 
   double advanceDeduction;
   double workPermitDeduction;
@@ -56,6 +57,7 @@ class PayrollRecord {
     this.sickLeave = 0,
     this.halfDays = 0,
     this.otDays = 0,
+    this.attendanceDetails = const [],
     this.advanceDeduction = 0,
     this.workPermitDeduction = 0,
     this.otherDeduction = 0,
@@ -66,4 +68,30 @@ class PayrollRecord {
   double get totalExtra => overtimePay + bonusPay + otherExtra;
   double get totalDeduction => advanceDeduction + workPermitDeduction + otherDeduction;
   double get netPay => (basePay + totalExtra - totalDeduction);
+
+  // Helper getters for specific leave categories
+  List<Map<String, dynamic>> get dayOffLogs => attendanceDetails.where((a) {
+        final cat = (a['category'] ?? a['status'])?.toString();
+        return cat == 'Day-off' || cat == 'OFF';
+      }).toList();
+
+  List<Map<String, dynamic>> get sickLogs => attendanceDetails.where((a) {
+        final cat = (a['category'] ?? a['status'])?.toString();
+        return cat == 'Sick' || cat == 'Sick Leave';
+      }).toList();
+
+  List<Map<String, dynamic>> get halfDayLogs => attendanceDetails.where((a) {
+        final cat = (a['category'] ?? a['status'])?.toString();
+        return cat == 'Half-day' || cat == 'Half';
+      }).toList();
+
+  List<Map<String, dynamic>> get otDayLogs => attendanceDetails.where((a) {
+        final cat = (a['category'] ?? a['status'])?.toString();
+        return cat == 'OT Days' || cat == 'OT';
+      }).toList();
+
+  List<Map<String, dynamic>> get otherLeaveLogs => attendanceDetails.where((a) {
+        final cat = (a['category'] ?? a['status'])?.toString();
+        return !['Day-off', 'OFF', 'Sick', 'Sick Leave', 'Half-day', 'Half', 'OT Days', 'OT', 'Work Days'].contains(cat);
+      }).toList();
 }

@@ -142,6 +142,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             return false;
           }
         }).toList();
+        empAtt.sort((a, b) => (a['date']?.toString() ?? '').compareTo(b['date']?.toString() ?? ''));
+        rec.attendanceDetails = empAtt;
 
         if (empAtt.isNotEmpty) {
           rec.dayOff = empAtt.where((a) => a['category'] == 'Day-off').fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0)).round();
@@ -341,65 +343,96 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 650;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
         foregroundColor: Colors.white,
         elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.diamond_outlined, size: 20, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        title: isMobile
+            ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'SIGNATURE PAYROLL',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                    overflow: TextOverflow.ellipsis,
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.diamond_outlined, size: 16, color: Colors.white),
                   ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _isApiOnline ? const Color(0xFF10B981) : Colors.amber,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          _isApiOnline ? 'Supabase Cloud Connected ⚡' : 'Offline Local Mode',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: _isApiOnline ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D),
-                          ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Payroll',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: _isApiOnline ? const Color(0xFF10B981) : Colors.amber,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0284C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.diamond_outlined, size: 20, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'SIGNATURE PAYROLL',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: _isApiOnline ? const Color(0xFF10B981) : Colors.amber,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                _isApiOnline ? 'Supabase Cloud Connected ⚡' : 'Offline Local Mode',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _isApiOnline ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
         actions: [
-          // Current Date Badge (on the left of period selector)
+          // Current Date Badge
           Container(
-            margin: const EdgeInsets.symmetric(vertical: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            margin: EdgeInsets.symmetric(vertical: isMobile ? 10 : 8),
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 12, vertical: 4),
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(8),
@@ -408,40 +441,50 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.today_outlined, size: 16, color: Color(0xFF38BDF8)),
-                const SizedBox(width: 8),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'TODAY',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF94A3B8),
-                        letterSpacing: 0.5,
+                const Icon(Icons.today_outlined, size: 14, color: Color(0xFF38BDF8)),
+                const SizedBox(width: 5),
+                if (!isMobile)
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'TODAY',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF94A3B8),
+                          letterSpacing: 0.5,
+                        ),
                       ),
-                    ),
-                    Text(
-                      DateFormat('EEE, d MMM yyyy').format(DateTime.now()),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                      Text(
+                        DateFormat('EEE, d MMM yyyy').format(DateTime.now()),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
                       ),
+                    ],
+                  )
+                else
+                  Text(
+                    DateFormat('d MMM').format(DateTime.now()),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
-                  ],
-                ),
+                  ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
-          // Period Selector Dropdown (all 24 periods)
+          // Period Selector Dropdown
           Container(
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            margin: EdgeInsets.symmetric(vertical: isMobile ? 10 : 8, horizontal: isMobile ? 6 : 12),
+            padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 12),
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(8),
@@ -451,9 +494,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               child: DropdownButton<String>(
                 value: _periods.contains(_selectedPeriod) ? _selectedPeriod : _periods.first,
                 dropdownColor: const Color(0xFF1E293B),
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: isMobile ? 12 : 13,
+                ),
                 items: _periods
-                    .map((p) => DropdownMenuItem(value: p, child: Text('Period $p')))
+                    .map((p) => DropdownMenuItem(value: p, child: Text(isMobile ? p : 'Period $p')))
                     .toList(),
                 onChanged: (val) {
                   if (val != null) {
@@ -485,27 +532,27 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           NavigationDestination(
             icon: Icon(Icons.calculate_outlined),
             selectedIcon: Icon(Icons.calculate),
-            label: 'Payroll Hub',
+            label: 'Payroll',
           ),
           NavigationDestination(
-            icon: Icon(Icons.beach_access_outlined),
-            selectedIcon: Icon(Icons.beach_access),
-            label: 'Day-offs / Leave',
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: 'Planner',
           ),
           NavigationDestination(
             icon: Icon(Icons.account_balance_wallet_outlined),
             selectedIcon: Icon(Icons.account_balance_wallet),
-            label: 'Advances & Expenses',
+            label: 'Adjust',
           ),
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             selectedIcon: Icon(Icons.receipt_long),
-            label: 'Digital Payslip',
+            label: 'Payslip',
           ),
           NavigationDestination(
             icon: Icon(Icons.people_alt_outlined),
             selectedIcon: Icon(Icons.people_alt),
-            label: 'Employees',
+            label: 'Staff',
           ),
         ],
       ),
@@ -524,16 +571,18 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     final totalExtra = records.fold<double>(0, (sum, r) => sum + r.totalExtra);
     final totalDeduction = records.fold<double>(0, (sum, r) => sum + r.totalDeduction);
     final prorateCount = records.where((r) => r.isProrate).length;
+    final isMobile = MediaQuery.of(context).size.width < 650;
 
     return Column(
       children: [
         Container(
           color: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: SingleChildScrollView(
+              if (isMobile) ...[
+                SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
@@ -547,73 +596,188 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                onPressed: _exportBankSummaryCsv,
-                icon: const Icon(Icons.file_download_outlined, size: 18),
-                label: const Text('Export Bank / CSV'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF0284C7),
-                  side: const BorderSide(color: Color(0xFF0284C7)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _exportBankSummaryCsv,
+                        icon: const Icon(Icons.file_download_outlined, size: 16),
+                        label: const Text('Export CSV', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF0284C7),
+                          side: const BorderSide(color: Color(0xFF0284C7)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _isSyncingExcel ? null : _syncPayrollToExcel,
+                        icon: _isSyncingExcel
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.cloud_upload_outlined, size: 16),
+                        label: Text(
+                          _isSyncingExcel ? 'Syncing...' : 'Sync to Cloud',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: _isSyncingExcel ? null : _syncPayrollToExcel,
-                icon: _isSyncingExcel
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.sync, size: 18),
-                label: Text(_isSyncingExcel ? 'Syncing...' : 'Sync to Excel Summary'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ] else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildFilterChip('All Groups'),
+                            const SizedBox(width: 8),
+                            _buildFilterChip('Date : 1', subtitle: '2nd prev - 1st current'),
+                            const SizedBox(width: 8),
+                            _buildFilterChip('Date : 10', subtitle: '11th prev - 10th current'),
+                            const SizedBox(width: 8),
+                            _buildFilterChip('Date : 20', subtitle: '21st prev - 20th current'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      onPressed: _exportBankSummaryCsv,
+                      icon: const Icon(Icons.file_download_outlined, size: 18),
+                      label: const Text('Export Bank / CSV'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0284C7),
+                        side: const BorderSide(color: Color(0xFF0284C7)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _isSyncingExcel ? null : _syncPayrollToExcel,
+                      icon: _isSyncingExcel
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.sync, size: 18),
+                      label: Text(_isSyncingExcel ? 'Syncing...' : 'Sync to Excel Summary'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
+              ],
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.all(16),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _buildSummaryCard(
-                title: 'Total Net Payout',
-                value: '฿${currency.format(totalNet)}',
-                color: const Color(0xFF0284C7),
-                icon: Icons.payments,
-                subtitle: '${records.length} Employees in this cycle',
-              ),
-              _buildSummaryCard(
-                title: 'Base & Prorate Pay',
-                value: '฿${currency.format(totalBase)}',
-                color: const Color(0xFF334155),
-                icon: Icons.account_balance_wallet,
-                subtitle: prorateCount > 0 ? '⚠️ $prorateCount Smart Prorate applied' : 'All full month',
-              ),
-              _buildSummaryCard(
-                title: 'Earnings (+)',
-                value: '+฿${currency.format(totalExtra)}',
-                color: const Color(0xFF10B981),
-                icon: Icons.trending_up,
-                subtitle: 'OT, Bonuses & Allowances',
-              ),
-              _buildSummaryCard(
-                title: 'Deductions (-)',
-                value: '-฿${currency.format(totalDeduction)}',
-                color: const Color(0xFFEF4444),
-                icon: Icons.trending_down,
-                subtitle: 'Advances, Work Permit fees',
-              ),
-            ],
-          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: isMobile
+              ? Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildSummaryCard(
+                            title: 'Total Net Payout',
+                            value: '฿${currency.format(totalNet)}',
+                            color: const Color(0xFF0284C7),
+                            icon: Icons.payments,
+                            subtitle: '${records.length} Employees',
+                            isCompact: true,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildSummaryCard(
+                            title: 'Base & Prorate Pay',
+                            value: '฿${currency.format(totalBase)}',
+                            color: const Color(0xFF334155),
+                            icon: Icons.account_balance_wallet,
+                            subtitle: prorateCount > 0 ? '$prorateCount Prorate' : 'All full month',
+                            isCompact: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildSummaryCard(
+                            title: 'Earnings (+)',
+                            value: '+฿${currency.format(totalExtra)}',
+                            color: const Color(0xFF10B981),
+                            icon: Icons.trending_up,
+                            subtitle: 'OT, Bonuses & Extra',
+                            isCompact: true,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildSummaryCard(
+                            title: 'Deductions (-)',
+                            value: '-฿${currency.format(totalDeduction)}',
+                            color: const Color(0xFFEF4444),
+                            icon: Icons.trending_down,
+                            subtitle: 'Advances, Fees',
+                            isCompact: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    _buildSummaryCard(
+                      title: 'Total Net Payout',
+                      value: '฿${currency.format(totalNet)}',
+                      color: const Color(0xFF0284C7),
+                      icon: Icons.payments,
+                      subtitle: '${records.length} Employees in this cycle',
+                    ),
+                    _buildSummaryCard(
+                      title: 'Base & Prorate Pay',
+                      value: '฿${currency.format(totalBase)}',
+                      color: const Color(0xFF334155),
+                      icon: Icons.account_balance_wallet,
+                      subtitle: prorateCount > 0 ? '⚠️ $prorateCount Smart Prorate applied' : 'All full month',
+                    ),
+                    _buildSummaryCard(
+                      title: 'Earnings (+)',
+                      value: '+฿${currency.format(totalExtra)}',
+                      color: const Color(0xFF10B981),
+                      icon: Icons.trending_up,
+                      subtitle: 'OT, Bonuses & Allowances',
+                    ),
+                    _buildSummaryCard(
+                      title: 'Deductions (-)',
+                      value: '-฿${currency.format(totalDeduction)}',
+                      color: const Color(0xFFEF4444),
+                      icon: Icons.trending_down,
+                      subtitle: 'Advances, Work Permit fees',
+                    ),
+                  ],
+                ),
         ),
         Expanded(
           child: records.isEmpty
@@ -655,9 +819,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                 children: [
                                   Row(
                                     children: [
-                                      Text(
-                                        rec.nickname,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                      Flexible(
+                                        child: Text(
+                                          rec.nickname,
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
                                       const SizedBox(width: 8),
                                       Container(
@@ -704,20 +871,40 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                         children: [
                                           const Icon(Icons.info_outline, size: 13, color: Color(0xFFEA580C)),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            'Prorate: ${rec.workedDays} days (@ ฿${(rec.dailyRate).toStringAsFixed(0)}/day) [${rec.prorateReason}]',
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              color: Color(0xFFC2410C),
-                                              fontWeight: FontWeight.w500,
+                                          Expanded(
+                                            child: Text(
+                                              'Prorate: ${rec.workedDays} days (@ ฿${(rec.dailyRate).toStringAsFixed(0)}/day) [${rec.prorateReason}]',
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFFC2410C),
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ],
                                       ),
                                     ),
+                                  Wrap(
+                                    spacing: 5,
+                                    runSpacing: 4,
+                                    children: [
+                                      _buildMiniBadge('💼 ${rec.workDays}d', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                                      _buildMiniBadge('🏖️ ${rec.dayOff}d', const Color(0xFFECFDF5), const Color(0xFF059669)),
+                                      if (rec.sickLeave > 0)
+                                        _buildMiniBadge('🩺 ${rec.sickLeave}d', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
+                                      if (rec.otDays > 0)
+                                        _buildMiniBadge('⚡ ${rec.otDays}d OT', const Color(0xFFFAF5FF), const Color(0xFF7C3AED)),
+                                      if (rec.totalExtra > 0)
+                                        _buildMiniBadge('+฿${currency.format(rec.totalExtra)}', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
+                                      if (rec.totalDeduction > 0)
+                                        _buildMiniBadge('-฿${currency.format(rec.totalDeduction)}', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
                                   Text(
-                                    'Base: ฿${currency.format(rec.basePay)} | +Extra: ฿${currency.format(rec.totalExtra)} | -Ded: ฿${currency.format(rec.totalDeduction)} | Work: ${rec.workDays}d | Off: ${rec.dayOff}d${rec.sickLeave > 0 ? " | Sick: ${rec.sickLeave}d" : ""}${rec.otDays > 0 ? " | OT: ${rec.otDays}d" : ""}',
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                    'Base: ฿${currency.format(rec.basePay)}',
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                                   ),
                                 ],
                               ),
@@ -1031,6 +1218,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   Widget _buildPayslipView() {
     final currency = NumberFormat('#,##0.00', 'en_US');
     final df = DateFormat('dd/MM/yyyy');
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isMobile = screenWidth < 600;
 
     PayrollRecord? record;
     if (_selectedPayslipEp != null && _payrollRecords.containsKey(_selectedPayslipEp)) {
@@ -1038,19 +1227,23 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 20, vertical: isMobile ? 12 : 20),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
           child: Column(
             children: [
               Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 8),
                   child: Row(
                     children: [
-                      const Text('Select Employee: ', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 12),
+                      Icon(Icons.badge_outlined, size: 20, color: Theme.of(context).primaryColor),
+                      const SizedBox(width: 8),
+                      Text(isMobile ? 'Staff: ' : 'Select Employee: ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
@@ -1059,7 +1252,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             items: _payrollRecords.values.map((r) {
                               return DropdownMenuItem(
                                 value: r.epCode,
-                                child: Text('${r.epCode} - ${r.nickname} (${r.payGroup})'),
+                                child: Text(
+                                  '${r.epCode} - ${r.nickname} (${r.payGroup})',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               );
                             }).toList(),
                             onChanged: (val) {
@@ -1072,7 +1268,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               if (record == null)
                 const Card(
                   child: Padding(
@@ -1084,126 +1280,183 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 RepaintBoundary(
                   key: _payslipKey,
                   child: Card(
-                    elevation: 4,
+                    elevation: 3,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     child: Padding(
-                      padding: const EdgeInsets.all(28),
+                      padding: EdgeInsets.all(isMobile ? 16 : 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          // Header: Company Logo/Name + Period Chip
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF0F172A),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(Icons.diamond, color: Colors.white, size: 18),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F172A),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Text(
-                                        'SIGNATURE PAYROLL',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          letterSpacing: 0.5,
-                                        ),
+                                      child: const Icon(Icons.diamond, color: Colors.white, size: 18),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'SIGNATURE PAYROLL',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 0.5,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Text(
+                                            'PAYSLIP / SALARY STATEMENT',
+                                            style: TextStyle(fontSize: 11, color: Color(0xFF64748B), letterSpacing: 0.5),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  const Text(
-                                    'PAYSLIP / SALARY STATEMENT',
-                                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B), letterSpacing: 0.5),
-                                  ),
-                                ],
+                                    ),
+                                  ],
+                                ),
                               ),
+                              const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFF1F5F9),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   'Period ${record.period}',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),
                             ],
                           ),
-                          const Divider(height: 28),
+                          const Divider(height: 24),
+
+                          // Employee Info Box
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Employee: ${record.nickname} (${record.epCode})',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Pay Group: ${record.payGroup}',
-                                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                    ),
-                                  ],
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}',
-                                      style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Pay Date: ${df.format(record.payDate)}',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                            child: isMobile
+                                ? Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              '${record.nickname} (${record.epCode})',
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFE0F2FE),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              record.payGroup,
+                                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            'Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}',
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                          ),
+                                          Text(
+                                            'Pay Date: ${df.format(record.payDate)}',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  )
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Employee: ${record.nickname} (${record.epCode})',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Pay Group: ${record.payGroup}',
+                                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                          ),
+                                        ],
+                                      ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}',
+                                            style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'Pay Date: ${df.format(record.payDate)}',
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
+
+                          // Attendance Stats Box
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF0FDF4),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: const Color(0xFFBBF7D0)),
                             ),
                             child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _buildAttendanceItem(Icons.work_history_outlined, 'Work Days', '${record.workDays} days'),
-                                _buildAttendanceItem(Icons.beach_access_outlined, 'Day-offs', '${record.dayOff} days'),
-                                _buildAttendanceItem(Icons.healing_outlined, 'Sick Leave', '${record.sickLeave} days'),
-                                _buildAttendanceItem(Icons.hourglass_bottom_outlined, 'Half-days', '${record.halfDays}'),
-                                _buildAttendanceItem(Icons.more_time_outlined, 'OT Days', '${record.otDays}'),
+                                Expanded(child: _buildAttendanceItem(Icons.work_history_outlined, 'Work Days', '${record.workDays}d')),
+                                Expanded(child: _buildAttendanceItem(Icons.beach_access_outlined, 'Day-offs', '${record.dayOff}d')),
+                                Expanded(child: _buildAttendanceItem(Icons.healing_outlined, 'Sick Leave', '${record.sickLeave}d')),
+                                Expanded(child: _buildAttendanceItem(Icons.hourglass_bottom_outlined, 'Half-days', '${record.halfDays}')),
+                                Expanded(child: _buildAttendanceItem(Icons.more_time_outlined, 'OT Days', '${record.otDays}')),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 14),
+
+                          // Detailed Leave and Day-off Dates Card
+                          _buildLeaveDetailsCard(record),
+
+                          const SizedBox(height: 12),
                           if (record.isProrate)
                             Container(
-                              margin: const EdgeInsets.only(bottom: 16),
-                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 14),
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFFFF7ED),
                                 borderRadius: BorderRadius.circular(8),
@@ -1216,78 +1469,36 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                   Expanded(
                                     child: Text(
                                       'Smart Prorate applied: ${record.workedDays} eligible days (@ ฿${currency.format(record.dailyRate)}/day) • Reason: ${record.prorateReason}',
-                                      style: const TextStyle(fontSize: 12, color: Color(0xFFC2410C)),
+                                      style: const TextStyle(fontSize: 11.5, color: Color(0xFFC2410C)),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      '➕ Earnings',
-                                      style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _buildPayslipLine(
-                                      record.isProrate ? 'Prorated Base Pay' : 'Base Salary',
-                                      '฿${currency.format(record.basePay)}',
-                                    ),
-                                    if (record.overtimePay > 0)
-                                      _buildPayslipLine('Overtime (OT)', '+฿${currency.format(record.overtimePay)}'),
-                                    if (record.bonusPay > 0)
-                                      _buildPayslipLine('Incentive / Bonus', '+฿${currency.format(record.bonusPay)}'),
-                                    if (record.otherExtra > 0)
-                                      _buildPayslipLine('Other Extra', '+฿${currency.format(record.otherExtra)}'),
-                                    const Divider(height: 16),
-                                    _buildPayslipLine(
-                                      'Total Earnings',
-                                      '฿${currency.format(record.basePay + record.totalExtra)}',
-                                      isBold: true,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 24),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      '➖ Deductions',
-                                      style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444)),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    _buildPayslipLine(
-                                      'Advance Payment',
-                                      record.advanceDeduction > 0 ? '-฿${currency.format(record.advanceDeduction)}' : '฿0.00',
-                                    ),
-                                    _buildPayslipLine(
-                                      'Work Permit / Passport',
-                                      record.workPermitDeduction > 0 ? '-฿${currency.format(record.workPermitDeduction)}' : '฿0.00',
-                                    ),
-                                    if (record.otherDeduction > 0)
-                                      _buildPayslipLine('Other Deductions', '-฿${currency.format(record.otherDeduction)}'),
-                                    const Divider(height: 16),
-                                    _buildPayslipLine(
-                                      'Total Deductions',
-                                      '-฿${currency.format(record.totalDeduction)}',
-                                      isBold: true,
-                                      color: const Color(0xFFEF4444),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
+
+                          // Earnings & Deductions Sections (Stacked on mobile, side-by-side on desktop)
+                          if (isMobile) ...[
+                            _buildEarningsSection(record, currency),
+                            const SizedBox(height: 14),
+                            const Divider(height: 1),
+                            const SizedBox(height: 14),
+                            _buildDeductionsSection(record, currency),
+                          ] else ...[
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: _buildEarningsSection(record, currency)),
+                                const SizedBox(width: 24),
+                                Expanded(child: _buildDeductionsSection(record, currency)),
+                              ],
+                            ),
+                          ],
+
+                          const SizedBox(height: 20),
+
+                          // NET PAYOUT Bar
                           Container(
-                            padding: const EdgeInsets.all(16),
+                            padding: EdgeInsets.all(isMobile ? 14 : 16),
                             decoration: BoxDecoration(
                               color: const Color(0xFF0F172A),
                               borderRadius: BorderRadius.circular(12),
@@ -1308,12 +1519,19 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     ),
                                   ],
                                 ),
-                                Text(
-                                  '฿${currency.format(record.netPay)}',
-                                  style: const TextStyle(
-                                    color: Color(0xFF38BDF8),
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      '฿${currency.format(record.netPay)}',
+                                      style: TextStyle(
+                                        color: const Color(0xFF38BDF8),
+                                        fontSize: isMobile ? 20 : 22,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1324,7 +1542,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Wrap(
                   spacing: 12,
                   runSpacing: 10,
@@ -1335,12 +1553,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0284C7),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: isMobile ? 12 : 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       icon: _isExportingImage
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.image),
+                          : const Icon(Icons.image, size: 18),
                       label: Text(_isExportingImage ? 'Saving...' : 'Save as Image (PNG)', style: const TextStyle(fontWeight: FontWeight.bold)),
                     ),
                     ElevatedButton.icon(
@@ -1357,19 +1575,19 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF06C755),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 20, vertical: isMobile ? 12 : 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      icon: const Icon(Icons.chat_bubble_outline),
+                      icon: const Icon(Icons.chat_bubble_outline, size: 18),
                       label: const Text('Copy for LINE', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                     OutlinedButton.icon(
                       onPressed: () => _showEditAdjustmentsDialog(record!),
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 18, vertical: isMobile ? 12 : 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      icon: const Icon(Icons.tune),
+                      icon: const Icon(Icons.tune, size: 18),
                       label: const Text('Quick Adjustments'),
                     ),
                   ],
@@ -1379,6 +1597,148 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildLeaveDetailsCard(PayrollRecord record) {
+    String formatDates(List<Map<String, dynamic>> logs, {bool showNote = false}) {
+      if (logs.isEmpty) return '';
+      return logs.map((l) {
+        final d = _formatShortDate(l['date']?.toString());
+        final note = l['note']?.toString().trim();
+        if (showNote && note != null && note.isNotEmpty) {
+          return '$d ($note)';
+        }
+        return d;
+      }).join(', ');
+    }
+
+    final hasAnyLogs = record.dayOffLogs.isNotEmpty ||
+        record.sickLogs.isNotEmpty ||
+        record.halfDayLogs.isNotEmpty ||
+        record.otDayLogs.isNotEmpty ||
+        record.otherLeaveLogs.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.calendar_month_outlined, size: 15, color: Color(0xFF475569)),
+              SizedBox(width: 6),
+              Text(
+                'รายละเอียดวันหยุด & วันลาในงวดนี้',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (!hasAnyLogs)
+            const Text(
+              '• ไม่มีบันทึกวันหยุด/วันลาพิเศษในงวดนี้ (Full Attendance)',
+              style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+            )
+          else ...[
+            if (record.dayOffLogs.isNotEmpty)
+              _buildLeaveDateRow(
+                'วันหยุด (OFF):',
+                formatDates(record.dayOffLogs),
+                const Color(0xFF0284C7),
+              ),
+            if (record.sickLogs.isNotEmpty)
+              _buildLeaveDateRow(
+                'ลาป่วย (Sick):',
+                formatDates(record.sickLogs, showNote: true),
+                const Color(0xFFEA580C),
+              ),
+            if (record.halfDayLogs.isNotEmpty)
+              _buildLeaveDateRow(
+                'ครึ่งวัน (Half):',
+                formatDates(record.halfDayLogs, showNote: true),
+                const Color(0xFFD97706),
+              ),
+            if (record.otDayLogs.isNotEmpty)
+              _buildLeaveDateRow(
+                'ทำงานวันหยุด (OT):',
+                formatDates(record.otDayLogs),
+                const Color(0xFF7C3AED),
+              ),
+            if (record.otherLeaveLogs.isNotEmpty)
+              _buildLeaveDateRow(
+                'ลาอื่นๆ (Leave):',
+                formatDates(record.otherLeaveLogs, showNote: true),
+                const Color(0xFF64748B),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEarningsSection(PayrollRecord record, NumberFormat currency) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '➕ Earnings (รายรับ)',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981), fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        _buildPayslipLine(
+          record.isProrate ? 'Prorated Base Pay' : 'Base Salary',
+          '฿${currency.format(record.basePay)}',
+        ),
+        if (record.overtimePay > 0)
+          _buildPayslipLine('Overtime (OT)', '+฿${currency.format(record.overtimePay)}'),
+        if (record.bonusPay > 0)
+          _buildPayslipLine('Incentive / Bonus', '+฿${currency.format(record.bonusPay)}'),
+        if (record.otherExtra > 0)
+          _buildPayslipLine('Other Extra', '+฿${currency.format(record.otherExtra)}'),
+        const Divider(height: 16),
+        _buildPayslipLine(
+          'Total Earnings',
+          '฿${currency.format(record.basePay + record.totalExtra)}',
+          isBold: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeductionsSection(PayrollRecord record, NumberFormat currency) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '➖ Deductions (รายการหัก)',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444), fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        _buildPayslipLine(
+          'Advance Payment',
+          record.advanceDeduction > 0 ? '-฿${currency.format(record.advanceDeduction)}' : '฿0.00',
+        ),
+        _buildPayslipLine(
+          'Work Permit / Passport',
+          record.workPermitDeduction > 0 ? '-฿${currency.format(record.workPermitDeduction)}' : '฿0.00',
+        ),
+        if (record.otherDeduction > 0)
+          _buildPayslipLine('Other Deductions', '-฿${currency.format(record.otherDeduction)}'),
+        const Divider(height: 16),
+        _buildPayslipLine(
+          'Total Deductions',
+          '-฿${currency.format(record.totalDeduction)}',
+          isBold: true,
+          color: const Color(0xFFEF4444),
+        ),
+      ],
     );
   }
 
@@ -1774,13 +2134,23 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   }
 
   Widget _buildAttendanceItem(IconData icon, String label, String value) {
-    return Column(
-      children: [
-        Icon(icon, size: 16, color: const Color(0xFF16A34A)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF475569))),
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF16A34A)),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF475569))),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(value, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF166534))),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1790,14 +2160,18 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
-              color: const Color(0xFF475569),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+                color: const Color(0xFF475569),
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(width: 8),
           Text(
             value,
             style: TextStyle(
@@ -1807,6 +2181,52 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildLeaveDateRow(String title, String dates, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: color),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              dates,
+              style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatShortDate(String? dStr) {
+    if (dStr == null || dStr.isEmpty) return '';
+    try {
+      final d = DateTime.parse(dStr);
+      return DateFormat('dd/MM').format(d);
+    } catch (_) {
+      return dStr;
+    }
+  }
+
+  Widget _buildMiniBadge(String text, Color bg, Color textCol) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textCol),
       ),
     );
   }
@@ -1845,14 +2265,22 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     required Color color,
     required IconData icon,
     required String subtitle,
+    bool isCompact = false,
   }) {
     return Container(
-      width: 220,
-      padding: const EdgeInsets.all(12),
+      width: isCompact ? null : 220,
+      padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12, vertical: isCompact ? 10 : 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1863,23 +2291,36 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  style: TextStyle(
+                    fontSize: isCompact ? 11 : 12,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(icon, size: 16, color: color),
+              Icon(icon, size: isCompact ? 15 : 16, color: color),
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: isCompact ? 16 : 18,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
           ),
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+            style: TextStyle(fontSize: isCompact ? 10 : 11, color: const Color(0xFF94A3B8)),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

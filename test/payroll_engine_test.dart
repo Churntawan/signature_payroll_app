@@ -83,5 +83,33 @@ void main() {
 
       expect(record, isNull);
     });
+
+    test('formatLinePayslip includes leave dates details when present', () {
+      final emp = Employee(
+        epCode: 'EP05',
+        nickname: 'Nui',
+        status: 'Active',
+        baseSalary: 15000,
+        payGroup: 'Date : 1',
+      );
+
+      final record = PayrollEngine.calculateEmployeeRecord(
+        employee: emp,
+        period: '2025-01',
+      );
+
+      expect(record, isNotNull);
+      record!.attendanceDetails = [
+        {'date': '2024-12-05', 'status': 'OFF', 'note': ''},
+        {'date': '2024-12-12', 'status': 'OFF', 'note': ''},
+        {'date': '2024-12-20', 'status': 'Sick', 'note': 'ปวดหัว'},
+      ];
+
+      final lineText = PayrollEngine.formatLinePayslip(record);
+      expect(lineText.contains('สถิติและวันหยุด/วันลา'), true);
+      expect(lineText.contains('05/12, 12/12'), true);
+      expect(lineText.contains('20/12 [ปวดหัว]'), true);
+      expect(lineText.contains('Nui (EP05)'), true);
+    });
   });
 }
