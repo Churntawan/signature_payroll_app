@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import '../models/employee.dart';
 import '../models/payroll_record.dart';
@@ -227,5 +228,81 @@ class ApiService {
       }
     } catch (_) {}
     return null;
+  }
+
+  // 9. Update employee status in Supabase Cloud
+  static Future<bool> updateEmployeeStatus({
+    required String epCode,
+    required String status,
+    DateTime? resignDate,
+  }) async {
+    try {
+      final Map<String, dynamic> body = {
+        'status': status,
+        'resign_date': resignDate != null ? DateFormat('yyyy-MM-dd').format(resignDate) : null,
+      };
+      final res = await http.patch(
+        Uri.parse('$supabaseUrl/employees?ep_code=eq.$epCode'),
+        headers: _headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 10. Update employee start & resign dates in Supabase Cloud
+  static Future<bool> updateEmployeeDates({
+    required String epCode,
+    DateTime? startDate,
+    DateTime? resignDate,
+    String? status,
+  }) async {
+    try {
+      final Map<String, dynamic> body = {
+        'start_date': startDate != null ? DateFormat('yyyy-MM-dd').format(startDate) : null,
+        'resign_date': resignDate != null ? DateFormat('yyyy-MM-dd').format(resignDate) : null,
+      };
+      if (status != null) {
+        body['status'] = status;
+      }
+      final res = await http.patch(
+        Uri.parse('$supabaseUrl/employees?ep_code=eq.$epCode'),
+        headers: _headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 11. Create or fully upsert Employee in Supabase Cloud
+  static Future<bool> saveEmployee(Employee emp) async {
+    try {
+      final Map<String, dynamic> body = {
+        'ep_code': emp.epCode,
+        'nickname': emp.nickname,
+        'status': emp.status,
+        'base_salary': emp.baseSalary,
+        'pay_group': emp.payGroup,
+        'stay_outside': emp.stayOutside,
+        'start_date': emp.startDate != null ? DateFormat('yyyy-MM-dd').format(emp.startDate!) : null,
+        'resign_date': emp.resignDate != null ? DateFormat('yyyy-MM-dd').format(emp.resignDate!) : null,
+        'note': emp.note,
+      };
+      final upsertHeaders = Map<String, String>.from(_headers);
+      upsertHeaders['Prefer'] = 'resolution=merge-duplicates';
+
+      final res = await http.post(
+        Uri.parse('$supabaseUrl/employees?on_conflict=ep_code'),
+        headers: upsertHeaders,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200 || res.statusCode == 201 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
   }
 }

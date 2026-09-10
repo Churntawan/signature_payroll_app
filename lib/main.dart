@@ -58,6 +58,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   bool _isSyncingExcel = false;
   bool _isAttendanceCalendarView = true;
   bool _isApiOnline = false;
+  bool _isRefreshing = false;
 
   late List<Employee> _employees;
   List<String> _periods = [DateFormat('yyyy-MM').format(DateTime.now())];
@@ -109,11 +110,19 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     await _fetchDataAndRecalculate();
   }
 
-  Future<void> _fetchDataAndRecalculate() async {
+  Future<void> _fetchDataAndRecalculate({bool reloadEmployees = false}) async {
+    if (reloadEmployees) {
+      final dbEmployees = await ApiService.fetchEmployees();
+      if (dbEmployees != null && dbEmployees.isNotEmpty && mounted) {
+        setState(() => _employees = dbEmployees);
+      }
+    }
+
     // Fetch real attendance and adjustments for this period
     final att = await ApiService.fetchAttendance(period: _selectedPeriod);
     final adj = await ApiService.fetchAdjustments(period: _selectedPeriod);
 
+    if (!mounted) return;
     setState(() {
       _attendanceLogs = att;
       _adjustments = adj;
@@ -511,6 +520,35 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               ),
             ),
           ),
+          // Instant Cloud Refresh Button
+          IconButton(
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(color: Color(0xFF38BDF8), strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh, size: 20, color: Color(0xFF38BDF8)),
+            tooltip: 'Refresh all data from Supabase Cloud',
+            onPressed: _isRefreshing
+                ? null
+                : () async {
+                    setState(() => _isRefreshing = true);
+                    final messenger = ScaffoldMessenger.of(context);
+                    await _fetchDataAndRecalculate(reloadEmployees: true);
+                    if (mounted) {
+                      setState(() => _isRefreshing = false);
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('⚡ Refreshed from Supabase Cloud Database!'),
+                          backgroundColor: Color(0xFF10B981),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: IndexedStack(
@@ -527,6 +565,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         selectedIndex: _currentTab,
         onDestinationSelected: (idx) {
           setState(() => _currentTab = idx);
+          if (idx == 0 || idx == 4) {
+            _fetchDataAndRecalculate(reloadEmployees: true);
+          }
         },
         destinations: const [
           NavigationDestination(
@@ -2461,7 +2502,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 setState(() {
                   record.workDays = int.tryParse(workDaysCtrl.text) ?? record.workDays;
                   record.dayOff = int.tryParse(dayOffCtrl.text) ?? record.dayOff;
@@ -2479,7 +2520,24 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   record.otherDeduction = double.tryParse(otherDedCtrl.text) ?? 0;
                   record.deductionNote = dedNoteCtrl.text;
                 });
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.pop(ctx);
+
+                // Auto-sync this employee's payroll record to Supabase Cloud
+                final res = await ApiService.savePayrollSummary([record]);
+                if (mounted) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        res != null
+                            ? '✅ Adjustments for ${record.nickname} saved to Cloud Database!'
+                            : '⚠️ Adjustments saved locally.',
+                      ),
+                      backgroundColor: res != null ? const Color(0xFF10B981) : Colors.orange,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
               },
               child: const Text('Save Changes'),
             ),
@@ -2563,11 +2621,11 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               actions: [
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 ElevatedButton(
-                  onPressed: () {
-                    if (nameCtrl.text.isNotEmpty) {
+                  onPressed: () async {
+                    if (nameCtrl.text.trim().isNotEmpty) {
                       final newEmp = Employee(
-                        epCode: epCtrl.text,
-                        nickname: nameCtrl.text,
+                        epCode: epCtrl.text.trim(),
+                        nickname: nameCtrl.text.trim(),
                         status: 'Active',
                         baseSalary: double.tryParse(salaryCtrl.text) ?? 12000,
                         payGroup: payGroup,
@@ -2576,8 +2634,26 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       setState(() {
                         _employees.add(newEmp);
                       });
-                      _fetchDataAndRecalculate();
-                      Navigator.pop(ctx);
+
+                      final messenger = ScaffoldMessenger.of(context);
+                      final navigator = Navigator.of(ctx);
+                      navigator.pop();
+
+                      final success = await ApiService.saveEmployee(newEmp);
+                      await _fetchDataAndRecalculate(reloadEmployees: true);
+
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? '✅ ${newEmp.nickname} saved to Cloud Database!'
+                                  : '⚠️ Added locally, cloud sync pending.',
+                            ),
+                            backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+                          ),
+                        );
+                      }
                     }
                   },
                   child: const Text('Save Employee'),
@@ -2661,19 +2737,43 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               actions: [
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     final index = _employees.indexWhere((e) => e.epCode == emp.epCode);
                     if (index != -1) {
+                      final newStatus = resign != null ? 'Resigned' : emp.status;
                       setState(() {
                         _employees[index] = emp.copyWith(
                           startDate: start,
                           resignDate: resign,
-                          status: resign != null ? 'Resigned' : emp.status,
+                          status: newStatus,
                         );
                       });
-                      _fetchDataAndRecalculate();
+
+                      final messenger = ScaffoldMessenger.of(context);
+                      final navigator = Navigator.of(ctx);
+                      navigator.pop();
+
+                      final success = await ApiService.updateEmployeeDates(
+                        epCode: emp.epCode,
+                        startDate: start,
+                        resignDate: resign,
+                        status: newStatus,
+                      );
+                      await _fetchDataAndRecalculate(reloadEmployees: true);
+
+                      if (mounted) {
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? '✅ Dates & status for ${emp.nickname} saved to Cloud Database!'
+                                  : '⚠️ Saved locally, cloud sync pending.',
+                            ),
+                            backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+                          ),
+                        );
+                      }
                     }
-                    Navigator.pop(ctx);
                   },
                   child: const Text('Save Dates'),
                 ),
@@ -2685,22 +2785,40 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     );
   }
 
-  void _toggleEmployeeStatus(Employee emp) {
+  Future<void> _toggleEmployeeStatus(Employee emp) async {
     final index = _employees.indexWhere((e) => e.epCode == emp.epCode);
     if (index != -1) {
       final newStatus = emp.isActive ? 'Resigned' : 'Active';
+      final resignDate = newStatus == 'Resigned' ? (emp.resignDate ?? DateTime.now()) : null;
+
       setState(() {
         _employees[index] = emp.copyWith(
           status: newStatus,
-          resignDate: newStatus == 'Resigned' ? (emp.resignDate ?? DateTime.now()) : null,
+          resignDate: resignDate,
         );
       });
-      _fetchDataAndRecalculate();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${emp.nickname} status updated to $newStatus'),
-        ),
+
+      final messenger = ScaffoldMessenger.of(context);
+      final success = await ApiService.updateEmployeeStatus(
+        epCode: emp.epCode,
+        status: newStatus,
+        resignDate: resignDate,
       );
+
+      await _fetchDataAndRecalculate(reloadEmployees: true);
+
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              success
+                  ? '✅ ${emp.nickname} status updated to $newStatus (Saved to Cloud Database)'
+                  : '⚠️ Updated locally, cloud sync pending.',
+            ),
+            backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+          ),
+        );
+      }
     }
   }
 }
