@@ -10,6 +10,7 @@ import 'models/payroll_record.dart';
 import 'services/api_service.dart';
 import 'services/image_saver.dart';
 import 'services/payroll_engine.dart';
+import 'widgets/two_month_calendar_planner.dart';
 
 void main() {
   runApp(const SignaturePayrollApp());
@@ -55,6 +56,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   final GlobalKey _payslipKey = GlobalKey();
   bool _isExportingImage = false;
   bool _isSyncingExcel = false;
+  bool _isAttendanceCalendarView = true;
   bool _isApiOnline = false;
 
   late List<Employee> _employees;
@@ -773,7 +775,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       children: [
         Container(
           color: Colors.white,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               Column(
@@ -790,11 +792,36 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 ],
               ),
               const Spacer(),
+              // View Mode Toggle (2-Month Planner vs List View)
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment<bool>(
+                    value: true,
+                    label: Text('2-Month Planner'),
+                    icon: Icon(Icons.calendar_month, size: 16),
+                  ),
+                  ButtonSegment<bool>(
+                    value: false,
+                    label: Text('List View'),
+                    icon: Icon(Icons.list_alt, size: 16),
+                  ),
+                ],
+                selected: {_isAttendanceCalendarView},
+                onSelectionChanged: (val) {
+                  setState(() => _isAttendanceCalendarView = val.first);
+                },
+                style: SegmentedButton.styleFrom(
+                  selectedBackgroundColor: const Color(0xFFE0F2FE),
+                  selectedForegroundColor: const Color(0xFF0369A1),
+                ),
+              ),
+              const SizedBox(width: 12),
               ElevatedButton.icon(
-                onPressed: _showLogAttendanceDialog,
+                onPressed: () => _showLogAttendanceDialog(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF10B981),
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
                 icon: const Icon(Icons.add_task, size: 18),
                 label: const Text('Log Day-off / Leave / OT'),
@@ -803,73 +830,79 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           ),
         ),
         Expanded(
-          child: _attendanceLogs.isEmpty
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.event_available, size: 48, color: Color(0xFF94A3B8)),
-                      SizedBox(height: 12),
-                      Text('No attendance records logged for this period yet.'),
-                      Text('Click "+ Log Day-off / Leave / OT" to record.', style: TextStyle(color: Color(0xFF94A3B8))),
-                    ],
-                  ),
+          child: _isAttendanceCalendarView
+              ? TwoMonthCalendarPlanner(
+                  period: _selectedPeriod,
+                  attendanceLogs: _attendanceLogs,
+                  onAddAttendance: (date) => _showLogAttendanceDialog(initialDate: date),
                 )
-              : ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _attendanceLogs.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 6),
-                  itemBuilder: (context, idx) {
-                    final log = _attendanceLogs[idx];
-                    final cat = log['category'] ?? 'Day-off';
-                    Color badgeColor = const Color(0xFF3B82F6);
-                    if (cat == 'Day-off') badgeColor = const Color(0xFF10B981);
-                    if (cat == 'Sick') badgeColor = const Color(0xFFEF4444);
-                    if (cat == 'Half-day') badgeColor = const Color(0xFFF59E0B);
-                    if (cat.contains('OT')) badgeColor = const Color(0xFF8B5CF6);
-
-                    return Card(
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: badgeColor.withValues(alpha: 0.12),
-                          foregroundColor: badgeColor,
-                          child: Icon(
-                            cat == 'Day-off'
-                                ? Icons.beach_access
-                                : (cat == 'Sick' ? Icons.healing : Icons.schedule),
-                            size: 18,
-                          ),
-                        ),
-                        title: Row(
-                          children: [
-                            Text(
-                              log['nickname'] ?? '',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(width: 8),
-                            Text('(${log['ep_code']})', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: badgeColor.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                cat,
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeColor),
-                              ),
-                            ),
-                          ],
-                        ),
-                        subtitle: Text(
-                          'Date: ${log['date']}  |  Units: ${log['units']}  |  Shift: ${log['shift']}${(log['note'] != null && log['note'].toString().isNotEmpty) ? '  • Note: ${log['note']}' : ''}',
-                          style: const TextStyle(fontSize: 12),
-                        ),
+              : (_attendanceLogs.isEmpty
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.event_available, size: 48, color: Color(0xFF94A3B8)),
+                          SizedBox(height: 12),
+                          Text('No attendance records logged for this period yet.'),
+                          Text('Click "+ Log Day-off / Leave / OT" to record.', style: TextStyle(color: Color(0xFF94A3B8))),
+                        ],
                       ),
-                    );
-                  },
-                ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _attendanceLogs.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 6),
+                      itemBuilder: (context, idx) {
+                        final log = _attendanceLogs[idx];
+                        final cat = log['category'] ?? 'Day-off';
+                        Color badgeColor = const Color(0xFF3B82F6);
+                        if (cat == 'Day-off') badgeColor = const Color(0xFF10B981);
+                        if (cat == 'Sick') badgeColor = const Color(0xFFEF4444);
+                        if (cat == 'Half-day') badgeColor = const Color(0xFFF59E0B);
+                        if (cat.contains('OT')) badgeColor = const Color(0xFF8B5CF6);
+
+                        return Card(
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: badgeColor.withValues(alpha: 0.12),
+                              foregroundColor: badgeColor,
+                              child: Icon(
+                                cat == 'Day-off'
+                                    ? Icons.beach_access
+                                    : (cat == 'Sick' ? Icons.healing : Icons.schedule),
+                                size: 18,
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Text(
+                                  log['nickname'] ?? '',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(width: 8),
+                                Text('(${log['ep_code']})', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: badgeColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    cat,
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeColor),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              'Date: ${log['date']}  |  Units: ${log['units']}  |  Shift: ${log['shift']}${(log['note'] != null && log['note'].toString().isNotEmpty) ? '  • Note: ${log['note']}' : ''}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        );
+                      },
+                    )),
         ),
       ],
     );
@@ -1518,8 +1551,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   // DIALOGS: ADD ATTENDANCE, ADD ADJUSTMENT, ADD EMPLOYEE
   // ===========================================================================
 
-  void _showLogAttendanceDialog() {
-    DateTime selectedDate = DateTime.now();
+  void _showLogAttendanceDialog({DateTime? initialDate}) {
+    DateTime selectedDate = initialDate ?? DateTime.now();
     String epCode = _employees.first.epCode;
     String category = 'Day-off';
     final noteCtrl = TextEditingController();
