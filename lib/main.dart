@@ -2540,7 +2540,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     'ep_code': emp.epCode,
                                     'nickname': emp.nickname,
                                     'category': 'Day-off',
-                                    'period': _selectedPeriod,
                                     'shift': 'Normal',
                                     'units': 1.0,
                                     'note': 'วันหยุดประจำเดือน $monthName',
@@ -2550,7 +2549,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             }
 
                             if (allBatchRecords.isNotEmpty) {
-                              await ApiService.batchCreateAttendance(allBatchRecords);
+                              final ok = await ApiService.batchCreateAttendance(allBatchRecords);
+                              if (!ok) {
+                                throw Exception('ไม่สามารถบันทึกข้อมูลไปยังระบบได้ กรุณาลองใหม่อีกครั้ง');
+                              }
                             }
 
                             await _fetchDataAndRecalculate();
@@ -2956,15 +2958,18 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               final cycle = PayrollEngine.getCycleRange(_selectedPeriod, emp.payGroup);
                               final empDays = chosenDays[emp.epCode] ?? {};
 
-                              // Clear old day-offs STRICTLY for this period
+                              // Clear old day-offs STRICTLY for this cycle's date range
                               if (clearExistingDayOffs) {
-                                await ApiService.clearDayOffsForPeriod(
-                                  period: _selectedPeriod,
+                                final startStr = DateFormat('yyyy-MM-dd').format(cycle.startDate);
+                                final endStr = DateFormat('yyyy-MM-dd').format(cycle.endDate);
+                                await ApiService.clearDayOffsForRange(
+                                  startDate: startStr,
+                                  endDate: endStr,
                                   epCode: emp.epCode,
                                 );
                               }
 
-                              // Generate records strictly tagged with _selectedPeriod
+                              // Generate records
                               for (var d = cycle.startDate; !d.isAfter(cycle.endDate); d = d.add(const Duration(days: 1))) {
                                 final dOnly = DateTime(d.year, d.month, d.day);
                                 if (emp.startDate != null) {
@@ -2982,7 +2987,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     'ep_code': emp.epCode,
                                     'nickname': emp.nickname,
                                     'category': 'Day-off',
-                                    'period': _selectedPeriod,
                                     'shift': 'Normal',
                                     'units': 1.0,
                                     'note': 'วันหยุดประจำงวด $_selectedPeriod',
@@ -2993,7 +2997,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
                             // 2. Batch insert to Supabase attendance_log
                             if (allBatchRecords.isNotEmpty) {
-                              await ApiService.batchCreateAttendance(allBatchRecords);
+                              final ok = await ApiService.batchCreateAttendance(allBatchRecords);
+                              if (!ok) {
+                                throw Exception('ไม่สามารถบันทึกข้อมูลไปยังระบบได้ กรุณาลองใหม่อีกครั้ง');
+                              }
                             }
 
                             // 3. Reload data for this period (no need to reload employees)

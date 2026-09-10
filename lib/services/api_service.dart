@@ -88,8 +88,9 @@ class ApiService {
           final m = int.parse(parts[1]);
           final prevY = m > 1 ? y : y - 1;
           final prevM = m > 1 ? m - 1 : 12;
-          final cycleStart = '${prevY.toString().padLeft(4, '0')}-${prevM.toString().padLeft(2, '0')}-02';
-          final cycleEnd = '${y.toString().padLeft(4, '0')}-${m.toString().padLeft(2, '0')}-20';
+          final lastDay = DateTime(y, m + 1, 0).day;
+          final cycleStart = '${prevY.toString().padLeft(4, '0')}-${prevM.toString().padLeft(2, '0')}-01';
+          final cycleEnd = '${y.toString().padLeft(4, '0')}-${m.toString().padLeft(2, '0')}-${lastDay.toString().padLeft(2, '0')}';
           query += '&date=gte.$cycleStart&date=lte.$cycleEnd';
         } catch (_) {}
       }
@@ -318,8 +319,16 @@ class ApiService {
         headers: upsertHeaders,
         body: jsonEncode(records),
       ).timeout(const Duration(seconds: 15));
-      return res.statusCode == 200 || res.statusCode == 201 || res.statusCode == 204;
-    } catch (_) {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return true;
+      } else {
+        // ignore: avoid_print
+        print('batchCreateAttendance failed with code: ${res.statusCode}, body: ${res.body}');
+        return false;
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('batchCreateAttendance exception: $e');
       return false;
     }
   }
@@ -351,15 +360,15 @@ class ApiService {
     String? epCode,
   }) async {
     try {
-      String query = '$supabaseUrl/attendance_log?category=eq.Day-off&period=eq.$period';
-      if (epCode != null && epCode.isNotEmpty) {
-        query += '&ep_code=eq.$epCode';
-      }
-      final res = await http.delete(
-        Uri.parse(query),
-        headers: _headers,
-      ).timeout(const Duration(seconds: 10));
-      return res.statusCode == 200 || res.statusCode == 204;
+      final parts = period.split('-');
+      final y = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      final prevY = m > 1 ? y : y - 1;
+      final prevM = m > 1 ? m - 1 : 12;
+      final cycleStart = '${prevY.toString().padLeft(4, '0')}-${prevM.toString().padLeft(2, '0')}-02';
+      final lastDay = DateTime(y, m + 1, 0).day;
+      final cycleEnd = '${y.toString().padLeft(4, '0')}-${m.toString().padLeft(2, '0')}-${lastDay.toString().padLeft(2, '0')}';
+      return clearDayOffsForRange(startDate: cycleStart, endDate: cycleEnd, epCode: epCode);
     } catch (_) {
       return false;
     }
