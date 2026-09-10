@@ -2163,6 +2163,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     }
 
     final df = DateFormat('dd/MM/yyyy');
+    final shortDf = DateFormat('dd/MM');
 
     // Weekday definitions: 1 = Monday to 7 = Sunday
     const weekdayDefs = [
@@ -2175,11 +2176,23 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       {'day': 7, 'short': 'อา.', 'name': 'วันอาทิตย์'},
     ];
 
-    // Local state for each employee's chosen weekdays
+    // Initialize chosen weekdays for EACH employee strictly from THIS PERIOD's existing attendance logs
     final Map<String, Set<int>> chosenDays = {};
     for (final emp in activeEmps) {
-      final prefs = emp.preferredDayOffs;
-      chosenDays[emp.epCode] = prefs.isNotEmpty ? prefs.toSet() : {1}; // Default to Monday if not set
+      final existingDayOffs = _attendanceLogs
+          .where((a) => a['ep_code'] == emp.epCode && a['category'] == 'Day-off')
+          .toList();
+      final Set<int> weekdays = {};
+      for (final a in existingDayOffs) {
+        final dStr = a['date']?.toString() ?? '';
+        if (dStr.isNotEmpty) {
+          try {
+            final d = DateTime.parse(dStr);
+            weekdays.add(d.weekday);
+          } catch (_) {}
+        }
+      }
+      chosenDays[emp.epCode] = weekdays;
     }
 
     bool clearExistingDayOffs = true;
@@ -2191,7 +2204,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setDlgState) {
-            // Count total day-offs that will be created
+            // Count total day-offs that will be created for this period
             int totalGeneratedDays = 0;
             for (final emp in activeEmps) {
               final cycle = PayrollEngine.getCycleRange(_selectedPeriod, emp.payGroup);
@@ -2231,13 +2244,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'จัดตารางวันหยุดประจำงวด',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-                        ),
                         Text(
-                          'งวด $_selectedPeriod • สร้างวันหยุดตามรอบจ่ายเงินเดือนอัตโนมัติ',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.normal),
+                          'จัดตารางวันหยุดเฉพาะงวด $_selectedPeriod',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                        ),
+                        const Text(
+                          'วางแผนเฉพาะงวดนี้ • ปลอดภัย ไม่กระทบแพลนงวดอื่น 100%',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.normal),
                         ),
                       ],
                     ),
@@ -2264,18 +2277,18 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           children: [
                             const Row(
                               children: [
-                                Icon(Icons.info_outline, size: 16, color: Color(0xFF0369A1)),
+                                Icon(Icons.verified_user_outlined, size: 16, color: Color(0xFF0369A1)),
                                 SizedBox(width: 6),
                                 Text(
-                                  'วิธีกำหนดวันหยุดประจำสัปดาห์:',
+                                  'ระบบแยกวันหยุดเฉพาะงวด (Per-Period Isolation):',
                                   style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 4),
-                            const Text(
-                              'กดเลือกวันที่พนักงานหยุดในแต่ละสัปดาห์ (จ. - อา.) ระบบจะบันทึกจำไว้ใช้งานในงวดถัดไปอัตโนมัติ โดยไม่ต้องตั้งค่าใหม่ทุกเดือน',
-                              style: TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                            Text(
+                              'การเลือกวันหยุดนี้จะมีผลเฉพาะงวด $_selectedPeriod เท่านั้น ระบบจะไม่ไปยุ่งหรือแตะต้องข้อมูลของงวดอื่นที่ผ่านมาเด็ดขาด',
+                              style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
                             ),
                             const SizedBox(height: 8),
                             // Clear existing checkbox
@@ -2296,10 +2309,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Expanded(
+                                  Expanded(
                                     child: Text(
-                                      'ล้างวันหยุด (Day-off) เดิมของงวดนี้ก่อนสร้างใหม่ (ป้องกันข้อมูลซ้ำซ้อน)',
-                                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                      'ล้างวันหยุดเดิมเฉพาะของงวด $_selectedPeriod นี้ก่อนสร้างใหม่',
+                                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
                                     ),
                                   ),
                                 ],
@@ -2325,8 +2338,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           final cycle = PayrollEngine.getCycleRange(_selectedPeriod, emp.payGroup);
                           final empDays = chosenDays[emp.epCode] ?? {};
 
-                          // Calculate how many days will be generated for this employee
-                          int empDaysCount = 0;
+                          // Calculate the exact dates that will be generated for this employee in this cycle
+                          final List<DateTime> generatedDates = [];
                           for (var d = cycle.startDate; !d.isAfter(cycle.endDate); d = d.add(const Duration(days: 1))) {
                             final dOnly = DateTime(d.year, d.month, d.day);
                             if (emp.startDate != null) {
@@ -2338,7 +2351,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               if (dOnly.isAfter(resignOnly)) continue;
                             }
                             if (empDays.contains(d.weekday)) {
-                              empDaysCount++;
+                              generatedDates.add(d);
                             }
                           }
 
@@ -2382,15 +2395,15 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: empDaysCount > 0 ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                                        color: generatedDates.isNotEmpty ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
-                                        'หยุด $empDaysCount วัน',
+                                        'หยุด ${generatedDates.length} วัน',
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
-                                          color: empDaysCount > 0 ? const Color(0xFF15803D) : const Color(0xFF64748B),
+                                          color: generatedDates.isNotEmpty ? const Color(0xFF15803D) : const Color(0xFF64748B),
                                         ),
                                       ),
                                     ),
@@ -2455,6 +2468,25 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     }).toList(),
                                   ),
                                 ),
+                                const SizedBox(height: 6),
+                                // Preview Dates List
+                                if (generatedDates.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '📅 วันหยุดในงวดนี้: ${generatedDates.map((d) => shortDf.format(d)).join(', ')} (${generatedDates.length} วัน)',
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                                    ),
+                                  )
+                                else
+                                  const Text(
+                                    'แตะเลือกวันด้านบน เช่น [จ.] เพื่อกำหนดวันหยุดในงวดนี้',
+                                    style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                                  ),
                               ],
                             ),
                           );
@@ -2471,7 +2503,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   child: const Text('ยกเลิก (Cancel)'),
                 ),
                 ElevatedButton.icon(
-                  onPressed: (isSubmitting || totalGeneratedDays == 0)
+                  onPressed: isSubmitting
                       ? null
                       : () async {
                           setDlgState(() => isSubmitting = true);
@@ -2479,25 +2511,22 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           final navigator = Navigator.of(ctx);
 
                           try {
-                            // 1. Prepare batch records
+                            // 1. Prepare batch records strictly for _selectedPeriod
                             final List<Map<String, dynamic>> allBatchRecords = [];
 
                             for (final emp in activeEmps) {
                               final cycle = PayrollEngine.getCycleRange(_selectedPeriod, emp.payGroup);
                               final empDays = chosenDays[emp.epCode] ?? {};
 
-                              // Clear old day-offs for this employee in this cycle if requested
+                              // Clear old day-offs STRICTLY for this period
                               if (clearExistingDayOffs) {
-                                final startStr = DateFormat('yyyy-MM-dd').format(cycle.startDate);
-                                final endStr = DateFormat('yyyy-MM-dd').format(cycle.endDate);
-                                await ApiService.clearDayOffsForRange(
-                                  startDate: startStr,
-                                  endDate: endStr,
+                                await ApiService.clearDayOffsForPeriod(
+                                  period: _selectedPeriod,
                                   epCode: emp.epCode,
                                 );
                               }
 
-                              // Generate records
+                              // Generate records strictly tagged with _selectedPeriod
                               for (var d = cycle.startDate; !d.isAfter(cycle.endDate); d = d.add(const Duration(days: 1))) {
                                 final dOnly = DateTime(d.year, d.month, d.day);
                                 if (emp.startDate != null) {
@@ -2515,16 +2544,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                     'ep_code': emp.epCode,
                                     'nickname': emp.nickname,
                                     'category': 'Day-off',
+                                    'period': _selectedPeriod,
                                     'shift': 'Normal',
                                     'units': 1.0,
-                                    'note': 'วันหยุดประจำสัปดาห์ (Auto-Schedule)',
+                                    'note': 'วันหยุดประจำงวด $_selectedPeriod',
                                   });
                                 }
                               }
-
-                              // Save preference to employee note in DB
-                              final updatedEmp = emp.copyWithPreferredDayOffs(empDays.toList());
-                              await ApiService.saveEmployee(updatedEmp);
                             }
 
                             // 2. Batch insert to Supabase attendance_log
@@ -2532,13 +2558,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               await ApiService.batchCreateAttendance(allBatchRecords);
                             }
 
-                            // 3. Reload data
-                            await _fetchDataAndRecalculate(reloadEmployees: true);
+                            // 3. Reload data for this period (no need to reload employees)
+                            await _fetchDataAndRecalculate(reloadEmployees: false);
 
                             navigator.pop();
                             messenger.showSnackBar(
                               SnackBar(
-                                content: Text('✅ จัดตารางวันหยุดสำเร็จ! สร้างวันหยุดทั้งหมด ${allBatchRecords.length} วันเรียบร้อยแล้ว'),
+                                content: Text('✅ บันทึกวันหยุดเฉพาะงวด $_selectedPeriod สำเร็จ! (สร้าง ${allBatchRecords.length} วัน) ไม่กระทบงวดอื่น'),
                                 backgroundColor: const Color(0xFF10B981),
                                 duration: const Duration(seconds: 3),
                               ),
@@ -2561,7 +2587,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   icon: isSubmitting
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Icon(Icons.flash_on, size: 18),
-                  label: Text(isSubmitting ? 'กำลังสร้าง...' : '⚡ บันทึกและสร้างวันหยุด ($totalGeneratedDays วัน)'),
+                  label: Text(isSubmitting ? 'กำลังสร้าง...' : '⚡ บันทึกวันหยุดงวด $_selectedPeriod ($totalGeneratedDays วัน)'),
                 ),
               ],
             );
