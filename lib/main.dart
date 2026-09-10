@@ -58,8 +58,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   bool _isApiOnline = false;
 
   late List<Employee> _employees;
-  List<String> _periods = ['2025-01'];
-  String _selectedPeriod = '2025-01';
+  List<String> _periods = [DateFormat('yyyy-MM').format(DateTime.now())];
+  String _selectedPeriod = DateFormat('yyyy-MM').format(DateTime.now());
   String _selectedGroupFilter = 'All Groups';
 
   Map<String, PayrollRecord> _payrollRecords = {};
@@ -81,11 +81,14 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     setState(() => _isApiOnline = connected);
 
     // 2. Fetch all 24 periods from Database
+    final currentPeriodStr = DateFormat('yyyy-MM').format(DateTime.now());
     final fetchedPeriods = await ApiService.fetchPeriods();
     if (fetchedPeriods.isNotEmpty) {
       setState(() {
         _periods = fetchedPeriods;
-        if (!_periods.contains(_selectedPeriod)) {
+        if (_periods.contains(currentPeriodStr)) {
+          _selectedPeriod = currentPeriodStr;
+        } else if (!_periods.contains(_selectedPeriod)) {
           _selectedPeriod = _periods.first;
         }
       });
@@ -352,38 +355,87 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               child: const Icon(Icons.diamond_outlined, size: 20, color: Colors.white),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'SIGNATURE PAYROLL',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _isApiOnline ? const Color(0xFF10B981) : Colors.amber,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          _isApiOnline ? 'REST API Connected' : 'Local Standalone Mode',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _isApiOnline ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          // Current Date Badge (on the left of period selector)
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'SIGNATURE PAYROLL',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                ),
-                Row(
+                const Icon(Icons.today_outlined, size: 16, color: Color(0xFF38BDF8)),
+                const SizedBox(width: 8),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _isApiOnline ? const Color(0xFF10B981) : Colors.amber,
-                        shape: BoxShape.circle,
+                    const Text(
+                      'TODAY',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF94A3B8),
+                        letterSpacing: 0.5,
                       ),
                     ),
-                    const SizedBox(width: 6),
                     Text(
-                      _isApiOnline ? 'REST API Database Connected' : 'Local Standalone Mode',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: _isApiOnline ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D),
+                      DateFormat('EEE, d MMM yyyy').format(DateTime.now()),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
                       ),
                     ),
                   ],
                 ),
               ],
             ),
-          ],
-        ),
-        actions: [
+          ),
+          const SizedBox(width: 8),
+
           // Period Selector Dropdown (all 24 periods)
           Container(
             margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
@@ -391,10 +443,11 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFF1E293B),
               borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF334155)),
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: _selectedPeriod,
+                value: _periods.contains(_selectedPeriod) ? _selectedPeriod : _periods.first,
                 dropdownColor: const Color(0xFF1E293B),
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                 items: _periods
