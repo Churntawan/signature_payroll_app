@@ -1188,63 +1188,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ],
                 ),
               ],
-              // Prominent Auto-Schedule Banner in Tab 2
-              Container(
-                margin: const EdgeInsets.only(top: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF4F46E5), Color(0xFF6366F1)],
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF4F46E5).withValues(alpha: 0.25),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '⚡ จัดตารางวันหยุดประจำงวด (Auto-Schedule)',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5),
-                          ),
-                          Text(
-                            'เลือกวันหยุด จ.-อา. ของพนักงาน ระบบสร้างวันหยุดให้อัตโนมัติทั้งเดือน',
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 11.5),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: _showAutoScheduleDayOffsDialog,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF4F46E5),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        elevation: 1,
-                      ),
-                      child: const Text('จัดตารางทันที', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
@@ -2195,6 +2138,27 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           } catch (_) {}
         }
       }
+
+      // If no day-offs found for this month yet, fallback to employee's preferred day-offs or past patterns
+      if (weekdays.isEmpty) {
+        if (emp.preferredDayOffs.isNotEmpty) {
+          weekdays.addAll(emp.preferredDayOffs);
+        } else {
+          final pastLogs = _attendanceLogs
+              .where((a) => a['ep_code'] == emp.epCode && a['category'] == 'Day-off')
+              .toList();
+          for (final a in pastLogs.take(4)) {
+            final dStr = a['date']?.toString() ?? '';
+            if (dStr.isNotEmpty) {
+              try {
+                final d = DateTime.parse(dStr);
+                weekdays.add(d.weekday);
+              } catch (_) {}
+            }
+          }
+        }
+      }
+
       chosenDays[emp.epCode] = weekdays;
     }
 
@@ -2316,6 +2280,69 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                   ),
                                 ],
                               ),
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: isSubmitting
+                                      ? null
+                                      : () {
+                                          setDlgState(() {
+                                            for (final emp in activeEmps) {
+                                              final days = chosenDays[emp.epCode] ?? {};
+                                              days.add(7); // Sunday
+                                              chosenDays[emp.epCode] = days;
+                                            }
+                                          });
+                                        },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  icon: const Icon(Icons.wb_sunny_outlined, size: 14, color: Color(0xFFD97706)),
+                                  label: const Text('+ ทุกคนหยุดวันอาทิตย์', style: TextStyle(fontSize: 11)),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: isSubmitting
+                                      ? null
+                                      : () {
+                                          setDlgState(() {
+                                            for (final emp in activeEmps) {
+                                              final days = chosenDays[emp.epCode] ?? {};
+                                              days.add(1); // Monday
+                                              chosenDays[emp.epCode] = days;
+                                            }
+                                          });
+                                        },
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  icon: const Icon(Icons.calendar_today, size: 14, color: Color(0xFF4F46E5)),
+                                  label: const Text('+ ทุกคนหยุดวันจันทร์', style: TextStyle(fontSize: 11)),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: isSubmitting
+                                      ? null
+                                      : () {
+                                          setDlgState(() {
+                                            for (final emp in activeEmps) {
+                                              chosenDays[emp.epCode] = {};
+                                            }
+                                          });
+                                        },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  icon: const Icon(Icons.clear_all, size: 14),
+                                  label: const Text('ล้างวันหยุดทั้งหมด', style: TextStyle(fontSize: 11)),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -2499,7 +2526,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   child: const Text('ยกเลิก (Cancel)'),
                 ),
                 ElevatedButton.icon(
-                  onPressed: isSubmitting
+                  onPressed: (isSubmitting || totalGeneratedDays == 0)
                       ? null
                       : () async {
                           setDlgState(() => isSubmitting = true);
@@ -2511,17 +2538,6 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
                             for (final emp in activeEmps) {
                               final empDays = chosenDays[emp.epCode] ?? {};
-
-                              // Clear old day-offs strictly within this month's date range (e.g. 2026-10-01 to 2026-10-31)
-                              if (clearExistingDayOffs) {
-                                final startStr = '$monthPrefix-01';
-                                final endStr = '$monthPrefix-$daysInMonth';
-                                await ApiService.clearDayOffsForRange(
-                                  startDate: startStr,
-                                  endDate: endStr,
-                                  epCode: emp.epCode,
-                                );
-                              }
 
                               for (int day = 1; day <= daysInMonth; day++) {
                                 final d = DateTime(targetMonth.year, targetMonth.month, day);
@@ -2548,6 +2564,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               }
                             }
 
+                            // 1. Clear old day-offs for this month range in Supabase in ONE atomic call
+                            if (clearExistingDayOffs) {
+                              final startStr = '$monthPrefix-01';
+                              final endStr = '$monthPrefix-$daysInMonth';
+                              await ApiService.clearDayOffsForRange(
+                                startDate: startStr,
+                                endDate: endStr,
+                              );
+                            }
+
+                            // 2. Batch insert to Supabase
                             if (allBatchRecords.isNotEmpty) {
                               final ok = await ApiService.batchCreateAttendance(allBatchRecords);
                               if (!ok) {
@@ -2555,12 +2582,31 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               }
                             }
 
+                            // 3. IMMEDIATE OPTIMISTIC LOCAL STATE UPDATE:
+                            // Update local attendanceLogs so the calendar updates instantly without waiting for network lag!
+                            if (mounted) {
+                              setState(() {
+                                if (clearExistingDayOffs) {
+                                  _attendanceLogs.removeWhere((a) =>
+                                    a['category'] == 'Day-off' &&
+                                    (a['date']?.toString() ?? '').startsWith(monthPrefix)
+                                  );
+                                }
+                                _attendanceLogs.addAll(allBatchRecords);
+                                // Ensure the selected period matches or displays targetMonth
+                                if (_selectedPeriod != monthPrefix && _periods.contains(monthPrefix)) {
+                                  _selectedPeriod = monthPrefix;
+                                }
+                              });
+                            }
+
+                            // 4. Background re-sync & recalculate
                             await _fetchDataAndRecalculate();
 
                             navigator.pop();
                             messenger.showSnackBar(
                               SnackBar(
-                                content: Text('✅ จัดตารางวันหยุดเดือน $monthName สำเร็จแล้ว (${allBatchRecords.length} วัน) ไม่กระทบเดือนอื่น'),
+                                content: Text('✅ จัดตารางวันหยุดเดือน $monthName สำเร็จแล้ว (${allBatchRecords.length} วัน) วันหยุดอัปเดตบนปฏิทินทันที'),
                                 backgroundColor: const Color(0xFF10B981),
                                 duration: const Duration(seconds: 3),
                               ),
@@ -2583,7 +2629,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   icon: isSubmitting
                       ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Icon(Icons.flash_on, size: 18),
-                  label: Text(isSubmitting ? 'กำลังสร้าง...' : '⚡ บันทึกวันหยุดเดือน $monthName ($totalGeneratedDays วัน)'),
+                  label: Text(
+                    isSubmitting
+                        ? 'กำลังสร้าง...'
+                        : (totalGeneratedDays == 0
+                            ? 'เลือกวันหยุดก่อนบันทึก (0 วัน)'
+                            : '⚡ บันทึกวันหยุดเดือน $monthName ($totalGeneratedDays วัน)'),
+                  ),
                 ),
               ],
             );
