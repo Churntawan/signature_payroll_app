@@ -2188,7 +2188,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             color: const Color(0xFF059669),
           ),
         if (record.overtimePay > 0)
-          _buildPayslipLine('Overtime (OT)', '+฿${currency.format(record.overtimePay)}'),
+          _buildPayslipLine(
+            record.otDays > 0 ? 'Overtime (OT: ${record.otDays} วัน @ ฿180)' : 'Overtime (OT)',
+            '+฿${currency.format(record.overtimePay)}',
+          ),
         if (record.bonusPay > 0)
           _buildPayslipLine('Incentive / Bonus', '+฿${currency.format(record.bonusPay)}'),
         if (record.otherExtra > 0)
@@ -3923,7 +3926,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         DropdownMenuItem(value: 'Day-off', child: Text('Day-off (วันหยุดประจำ)')),
                         DropdownMenuItem(value: 'Sick', child: Text('Sick Leave (ลาป่วย)')),
                         DropdownMenuItem(value: 'Half-day', child: Text('Half-day (ทำงานครึ่งวัน)')),
-                        DropdownMenuItem(value: 'OT Days', child: Text('OT Days (ทำงานล่วงเวลา)')),
+                        DropdownMenuItem(value: 'OT Days', child: Text('OT Days (ทำงานล่วงเวลา @ ฿180/วัน)')),
                         DropdownMenuItem(value: 'Work Days', child: Text('Work Days (วันทำงาน)')),
                       ],
                       onChanged: (val) {
@@ -4358,7 +4361,11 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         child: TextField(
                           controller: otDaysCtrl,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'OT Days', border: OutlineInputBorder()),
+                          decoration: const InputDecoration(labelText: 'OT Days (@ ฿180/วัน)', border: OutlineInputBorder()),
+                          onChanged: (val) {
+                            final days = double.tryParse(val) ?? 0.0;
+                            otCtrl.text = (days * 180.0).toStringAsFixed(0);
+                          },
                         ),
                       ),
                     ],
@@ -4472,7 +4479,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     record.housingAllowanceNote = 'ปรับปรุงยอดค่าห้องพักในงวด';
                   }
 
-                  record.overtimePay = double.tryParse(otCtrl.text) ?? 0;
+                  final parsedOt = double.tryParse(otCtrl.text);
+                  record.overtimePay = parsedOt ?? (record.otDays * 180.0);
                   record.bonusPay = double.tryParse(bonusCtrl.text) ?? 0;
                   record.otherExtra = double.tryParse(otherExtraCtrl.text) ?? 0;
                   record.extraNote = extraNoteCtrl.text;

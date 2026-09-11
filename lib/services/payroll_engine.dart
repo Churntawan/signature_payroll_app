@@ -21,6 +21,9 @@ class CycleDateRange {
 }
 
 class PayrollEngine {
+  /// Standard overtime rate per day (THB)
+  static const double standardOtDailyRate = 180.0;
+
   /// คำนวณช่วงวันที่ตัดรอบสำหรับงวดและกลุ่มการจ่าย
   static CycleDateRange getCycleRange(String period, String payGroup) {
     final parts = period.split('-');
@@ -222,10 +225,11 @@ class PayrollEngine {
         .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
         .round();
     rec.halfDays = attendanceLogs.where((a) => a['category'] == 'Half-day').length;
-    rec.otDays = attendanceLogs
-        .where((a) => a['category'] == 'OT Days')
-        .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
-        .round();
+    final otUnits = attendanceLogs
+        .where((a) => a['category'] == 'OT Days' || a['category'] == 'OT')
+        .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0));
+    rec.otDays = otUnits.round();
+    rec.overtimePay = (otUnits * standardOtDailyRate).roundToDouble();
 
     // Day-off quota: if explicitly logged > 0 use it; otherwise default to standard 4 days (unless prorated)
     if (loggedDayOffs > 0) {

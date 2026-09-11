@@ -114,7 +114,7 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
               _buildLegendItem(const Color(0xFF0284C7), 'Work Days (วันทำงาน)'),
               _buildLegendItem(const Color(0xFFEF4444), 'Sick Leave (ลาป่วย)'),
               _buildLegendItem(const Color(0xFFF59E0B), 'Half-day (ครึ่งวัน)'),
-              _buildLegendItem(const Color(0xFF8B5CF6), 'OT Days (ทำงานวันหยุด)'),
+              _buildLegendItem(const Color(0xFF8B5CF6), 'OT Days (ทำงานวันหยุด @ ฿180/วัน)'),
               Container(
                 height: 14,
                 width: 1,

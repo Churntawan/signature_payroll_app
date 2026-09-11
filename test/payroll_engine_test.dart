@@ -557,5 +557,38 @@ void main() {
       final group20Arrived = simulatedToday.isAtSameMomentAs(cycle20.payDate) || simulatedToday.isAfter(cycle20.payDate);
       expect(group20Arrived, false);
     });
+
+    test('Overtime (OT) rate: 1 day equals 180 THB', () {
+      final emp = Employee(
+        epCode: 'EP01',
+        nickname: 'Chujai',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 10',
+      );
+
+      final record = PayrollEngine.calculateEmployeeRecord(
+        employee: emp,
+        period: '2026-09',
+      );
+      expect(record, isNotNull);
+
+      // Case 1: 1 day of OT -> 180 THB
+      PayrollEngine.applyAttendance(record!, [
+        {'date': '2026-08-25', 'category': 'OT Days', 'units': 1.0},
+      ]);
+      expect(record.otDays, equals(1));
+      expect(record.overtimePay, equals(180.0));
+      expect(record.netPay, equals(12000.0 + 180.0));
+
+      // Case 2: 2 days of OT -> 360 THB
+      PayrollEngine.applyAttendance(record, [
+        {'date': '2026-08-25', 'category': 'OT Days', 'units': 1.0},
+        {'date': '2026-09-02', 'category': 'OT Days', 'units': 1.0},
+      ]);
+      expect(record.otDays, equals(2));
+      expect(record.overtimePay, equals(360.0));
+      expect(record.netPay, equals(12000.0 + 360.0));
+    });
   });
 }

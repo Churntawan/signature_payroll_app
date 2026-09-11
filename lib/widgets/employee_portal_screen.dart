@@ -623,7 +623,13 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                             ],
                             if (rec.overtimePay > 0) ...[
                               const SizedBox(height: 4),
-                              _buildAmountRow(L10n.overtimePay.get(sub), rec.overtimePay, currency),
+                              _buildAmountRow(
+                                rec.otDays > 0
+                                    ? '${L10n.overtimePay.get(sub)} (${rec.otDays}d @ ฿180)'
+                                    : L10n.overtimePay.get(sub),
+                                rec.overtimePay,
+                                currency,
+                              ),
                             ],
                             if (rec.bonusPay > 0) ...[
                               const SizedBox(height: 4),
