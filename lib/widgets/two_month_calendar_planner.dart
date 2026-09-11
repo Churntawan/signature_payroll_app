@@ -6,6 +6,7 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
   final List<Map<String, dynamic>> attendanceLogs;
   final Function(DateTime date) onAddAttendance;
   final Function(DateTime monthDate)? onAutoScheduleMonth;
+  final Function(DateTime monthDate)? onClearMonthDayOffs;
   final Function(Map<String, dynamic> log)? onDeleteAttendance;
 
   const TwoMonthCalendarPlanner({
@@ -14,6 +15,7 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
     required this.attendanceLogs,
     required this.onAddAttendance,
     this.onAutoScheduleMonth,
+    this.onClearMonthDayOffs,
     this.onDeleteAttendance,
   });
 
@@ -257,6 +259,24 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
                     label: Text(
                       '⚡ จัดวันหยุด ${DateFormat('MMM').format(monthDate)}',
                       style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+                if (onClearMonthDayOffs != null) ...[
+                  const SizedBox(width: 6),
+                  OutlinedButton.icon(
+                    onPressed: () => onClearMonthDayOffs!(monthDate),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Color(0xFFFCA5A5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      visualDensity: VisualDensity.compact,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 14, color: Colors.red),
+                    label: Text(
+                      'ล้างวันหยุด ${DateFormat('MMM').format(monthDate)}',
+                      style: const TextStyle(fontSize: 11.5, color: Colors.red, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],

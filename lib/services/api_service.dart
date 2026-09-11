@@ -402,4 +402,34 @@ class ApiService {
       return false;
     }
   }
+
+  // 16. Delete a single Payroll Adjustment entry from Supabase Cloud
+  static Future<bool> deleteAdjustment({
+    dynamic id,
+    String? epCode,
+    String? dueDate,
+    String? category,
+  }) async {
+    try {
+      String query;
+      if (id != null && id.toString().isNotEmpty) {
+        query = '$supabaseUrl/payroll_adjustments?id=eq.$id';
+      } else if (epCode != null && dueDate != null) {
+        query = '$supabaseUrl/payroll_adjustments?ep_code=eq.$epCode&due_date=eq.$dueDate';
+        if (category != null) {
+          query += '&category=eq.$category';
+        }
+      } else {
+        return false;
+      }
+      final res = await http.delete(
+        Uri.parse(query),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
 }
+

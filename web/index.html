@@ -37,11 +37,18 @@
 </head>
 <body>
   <script>
-    // Ensure existing service workers update immediately
+    // Force unregister stale service workers and clear cache storage to ensure instant updates
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for (let registration of registrations) {
-          registration.update();
+          registration.unregister();
+        }
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        for (let name of names) {
+          caches.delete(name);
         }
       });
     }
