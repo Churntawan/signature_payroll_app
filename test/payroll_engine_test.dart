@@ -437,5 +437,58 @@ void main() {
       expect(rec.basePay, 11600.0);
       expect(rec.netPay, 11600.0);
     });
+
+    test('Cherry payroll and non-overlapping adjustments for 2026-08 vs 2026-09', () {
+      final cherry = Employee(
+        epCode: 'EP39',
+        nickname: 'Cherry',
+        status: 'Resigned',
+        baseSalary: 12000,
+        payGroup: 'Date : 1',
+        stayOutside: 'Yes',
+        resignDate: DateTime(2026, 8, 31),
+        note: '[Wage:Daily] [DailyRate:400] [Housing:1000]',
+      );
+
+      // --- Period 2026-08 (Cycle: 02/07/2026 - 01/08/2026) ---
+      final rec08 = PayrollEngine.calculateEmployeeRecord(employee: cherry, period: '2026-08')!;
+      expect(rec08.housingAllowance, 1000.0); // Active and qualified
+
+      // Attendance: 12 day-off logs
+      final att08 = List.generate(12, (i) => {'date': '2026-07-${(i + 5).toString().padLeft(2, '0')}', 'category': 'Day-off', 'units': 1.0});
+      PayrollEngine.applyAttendance(rec08, att08);
+      expect(rec08.workDays, 19); // 31 - 12 = 19 days
+      expect(rec08.basePay, 7600.0); // 19 * 400
+
+      // Period 2026-08 adjustment: Installment 3 (1,000 THB)
+      rec08.advanceDeduction = 1000.0;
+      expect(rec08.netPay, 7600.0); // 7,600 base + 1,000 housing - 1,000 advance = 7,600 THB
+
+      // --- Period 2026-09 (Cycle: 02/08/2026 - 01/09/2026) ---
+      final rec09 = PayrollEngine.calculateEmployeeRecord(employee: cherry, period: '2026-09')!;
+      expect(rec09.isProrate, true);
+      expect(rec09.housingAllowance, 0.0); // Forfeited due to mid-cycle resignation
+
+      // Attendance: 4 day-offs, 1 sick leave
+      final att09 = [
+        {'date': '2026-08-09', 'category': 'Sick', 'units': 1.0},
+        {'date': '2026-08-14', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-16', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-21', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-28', 'category': 'Day-off', 'units': 1.0},
+      ];
+      PayrollEngine.applyAttendance(rec09, att09);
+      expect(rec09.workDays, 25); // 30 calendar days - 4 day-offs - 1 sick = 25 days
+      expect(rec09.basePay, 10000.0); // 25 * 400
+
+      // Period 2026-09 adjustment: Installment 4 (2,000 THB final settlement)
+      rec09.advanceDeduction = 2000.0;
+      expect(rec09.netPay, 8000.0); // 10,000 base - 2,000 advance = 8,000 THB
+
+      // Verify total repaid advance across periods is exactly 5,000 THB
+      // (June: 1,000 + July: 1,000 + Aug: 1,000 + Sep: 2,000 = 5,000 THB)
+      final totalAdvanceRepaid = 1000.0 + 1000.0 + rec08.advanceDeduction + rec09.advanceDeduction;
+      expect(totalAdvanceRepaid, 5000.0);
+    });
   });
 }

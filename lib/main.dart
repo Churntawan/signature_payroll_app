@@ -185,10 +185,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           }
         }
 
-        // Keep local overrides if any
+        // Keep local overrides if any (strictly within the same period to prevent cross-period bleeding)
         if (_payrollRecords.containsKey(emp.epCode)) {
           final old = _payrollRecords[emp.epCode]!;
-          if (empAdj.isEmpty) {
+          if (old.period == rec.period && empAdj.isEmpty) {
             rec.overtimePay = old.overtimePay;
             rec.bonusPay = old.bonusPay;
             rec.otherExtra = old.otherExtra;
@@ -515,8 +515,11 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     .map((p) => DropdownMenuItem(value: p, child: Text(isMobile ? p : 'Period $p')))
                     .toList(),
                 onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedPeriod = val);
+                  if (val != null && val != _selectedPeriod) {
+                    setState(() {
+                      _selectedPeriod = val;
+                      _payrollRecords.clear();
+                    });
                     _fetchDataAndRecalculate();
                   }
                 },
@@ -2436,7 +2439,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         category: category,
       );
 
-      // 3. Recalculate
+      // 3. Clear local cache for this employee and recalculate
+      _payrollRecords.remove(epCode);
       await _fetchDataAndRecalculate();
 
       if (mounted) {
