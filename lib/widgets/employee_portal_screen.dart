@@ -9,6 +9,8 @@ import '../services/api_service.dart';
 import '../services/image_saver.dart';
 import '../services/payroll_engine.dart';
 import '../services/localization_service.dart';
+import '../models/leave_request.dart';
+import '../services/leave_request_service.dart';
 import 'language_toggle.dart';
 
 class EmployeePortalScreen extends StatefulWidget {
@@ -28,15 +30,26 @@ class EmployeePortalScreen extends StatefulWidget {
 }
 
 class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
-  int _currentTab = 0; // 0 = Payslip, 1 = Attendance Schedule
+  int _currentTab = 0; // 0 = Payslip, 1 = Attendance Schedule, 2 = Leave Request
   late String _selectedPeriod;
   bool _isLoading = false;
   bool _isExporting = false;
   final GlobalKey _payslipKey = GlobalKey();
 
+  DateTime _requestedDate = DateTime.now().add(const Duration(days: 1));
+  String _requestedCategory = 'Day-off';
+  final TextEditingController _requestNoteCtrl = TextEditingController();
+  bool _isSubmittingRequest = false;
+
   List<Map<String, dynamic>> _employeeAttendance = [];
   List<Map<String, dynamic>> _employeeAdjustments = [];
   PayrollRecord? _currentRecord;
+
+  @override
+  void dispose() {
+    _requestNoteCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -295,6 +308,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                   children: [
                     _buildPayslipTab(isMobile, sub),
                     _buildScheduleTab(isMobile, sub),
+                    _buildLeaveRequestTab(isMobile, sub),
                   ],
                 ),
           bottomNavigationBar: NavigationBar(
@@ -312,6 +326,11 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                 icon: const Icon(Icons.calendar_month_outlined, color: Color(0xFF94A3B8)),
                 selectedIcon: const Icon(Icons.calendar_month, color: Color(0xFF38BDF8)),
                 label: L10n.tabSchedule.get(sub),
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.edit_calendar_outlined, color: Color(0xFF94A3B8)),
+                selectedIcon: const Icon(Icons.edit_calendar, color: Color(0xFF38BDF8)),
+                label: L10n.tabLeaveRequest.get(sub),
               ),
             ],
           ),
@@ -968,6 +987,396 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // TAB 3: LEAVE REQUEST FORM & HISTORY
+  // ===========================================================================
+  Widget _buildLeaveRequestTab(bool isMobile, SubLanguage sub) {
+    final df = DateFormat('dd/MM/yyyy');
+    final myRequests = LeaveRequestService.getRequests(epCode: widget.employee.epCode);
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 16),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 580),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. Header Info & Rules Card
+              Card(
+                color: const Color(0xFF1E293B),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.edit_calendar, color: Color(0xFF38BDF8), size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${L10n.leaveRequestTitle.get(sub)} (${widget.employee.nickname})',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF0284C7).withOpacity(0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 16, color: Color(0xFF38BDF8)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                L10n.advanceNoticeRule.get(sub),
+                                style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // 2. The Request Form Card
+              Card(
+                color: const Color(0xFF1E293B),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Category selection
+                      Text(
+                        L10n.leaveType.get(sub),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFCBD5E1)),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => _requestedCategory = 'Day-off'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: _requestedCategory == 'Day-off'
+                                      ? const Color(0xFF0284C7)
+                                      : const Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _requestedCategory == 'Day-off'
+                                        ? const Color(0xFF38BDF8)
+                                        : const Color(0xFF334155),
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  L10n.typeDayOff.get(sub),
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _requestedCategory == 'Day-off' ? Colors.white : const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setState(() => _requestedCategory = 'Sick'),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: _requestedCategory == 'Sick'
+                                      ? const Color(0xFFD97706)
+                                      : const Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: _requestedCategory == 'Sick'
+                                        ? const Color(0xFFF59E0B)
+                                        : const Color(0xFF334155),
+                                  ),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  L10n.typeSick.get(sub),
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: _requestedCategory == 'Sick' ? Colors.white : const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Date picker selection
+                      Text(
+                        L10n.selectDate.get(sub),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFCBD5E1)),
+                      ),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: () async {
+                          final tomorrow = DateTime.now().add(const Duration(days: 1));
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _requestedDate.isBefore(tomorrow) ? tomorrow : _requestedDate,
+                            firstDate: tomorrow,
+                            lastDate: DateTime.now().add(const Duration(days: 90)),
+                            builder: (ctx, child) {
+                              return Theme(
+                                data: Theme.of(ctx).copyWith(
+                                  colorScheme: const ColorScheme.dark(
+                                    primary: Color(0xFF0284C7),
+                                    onPrimary: Colors.white,
+                                    surface: Color(0xFF1E293B),
+                                    onSurface: Colors.white,
+                                  ),
+                                ),
+                                child: child!,
+                              );
+                            },
+                          );
+                          if (picked != null) {
+                            setState(() => _requestedDate = picked);
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF334155)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.calendar_month, color: Color(0xFF38BDF8), size: 18),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    '${df.format(_requestedDate)} (${L10n.getDayName(_requestedDate.weekday, sub)})',
+                                    style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const Icon(Icons.arrow_drop_down, color: Color(0xFF94A3B8)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Reason / Note
+                      Text(
+                        L10n.noteLabel.get(sub),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFCBD5E1)),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _requestNoteCtrl,
+                        maxLines: 2,
+                        style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                        decoration: InputDecoration(
+                          hintText: L10n.noteHint.sub(sub),
+                          hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12.5),
+                          filled: true,
+                          fillColor: const Color(0xFF0F172A),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF334155))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF334155))),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF38BDF8))),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Submit Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isSubmittingRequest
+                              ? null
+                              : () {
+                                  final res = LeaveRequestService.submitRequest(
+                                    epCode: widget.employee.epCode,
+                                    nickname: widget.employee.nickname,
+                                    date: _requestedDate,
+                                    category: _requestedCategory,
+                                    note: _requestNoteCtrl.text,
+                                  );
+
+                                  if (res.success) {
+                                    _requestNoteCtrl.clear();
+                                    setState(() {});
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('✅ ${L10n.requestSubmittedSuccess.get(sub)}'),
+                                        backgroundColor: const Color(0xFF10B981),
+                                      ),
+                                    );
+                                  } else {
+                                    String msg = res.error ?? '';
+                                    if (res.error == 'date_too_soon') msg = L10n.errDateTooSoon.get(sub);
+                                    if (res.error == 'duplicate_date') msg = L10n.errDuplicateDate.get(sub);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('⚠️ $msg'), backgroundColor: Colors.amber[800]),
+                                    );
+                                  }
+                                },
+                          icon: const Icon(Icons.send_rounded, size: 16),
+                          label: Text(L10n.submitRequestBtn.get(sub), style: const TextStyle(fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0284C7),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // 3. My Requests History
+              Card(
+                color: const Color(0xFF1E293B),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        L10n.myRequestsTitle.get(sub),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      const SizedBox(height: 12),
+                      if (myRequests.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: Center(
+                            child: Text(
+                              L10n.noRequestsYet.get(sub),
+                              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                            ),
+                          ),
+                        )
+                      else
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: myRequests.length,
+                          separatorBuilder: (_, __) => const Divider(color: Color(0xFF334155), height: 16),
+                          itemBuilder: (context, idx) {
+                            final req = myRequests[idx];
+                            final dayName = L10n.getDayName(req.date.weekday, sub);
+                            final isPending = req.status == LeaveRequestStatus.pending;
+                            final isApproved = req.status == LeaveRequestStatus.approved;
+
+                            Color statusColor = const Color(0xFFF59E0B);
+                            String statusLabel = L10n.statusPending.get(sub);
+                            if (isApproved) {
+                              statusColor = const Color(0xFF10B981);
+                              statusLabel = L10n.statusApproved.get(sub);
+                            } else if (req.status == LeaveRequestStatus.rejected) {
+                              statusColor = const Color(0xFFEF4444);
+                              statusLabel = L10n.statusRejected.get(sub);
+                            }
+
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(
+                                            req.category == 'Sick' ? L10n.typeSick.get(sub) : L10n.typeDayOff.get(sub),
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: req.category == 'Sick' ? const Color(0xFFF59E0B) : const Color(0xFF38BDF8),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            '${df.format(req.date)} ($dayName)',
+                                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                                          ),
+                                        ],
+                                      ),
+                                      if (req.note.isNotEmpty)
+                                        Text(
+                                          '${L10n.noteLabel.get(sub)}: ${req.note}',
+                                          style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: statusColor.withOpacity(0.5)),
+                                  ),
+                                  child: Text(
+                                    statusLabel,
+                                    style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                if (isPending) ...[
+                                  const SizedBox(width: 6),
+                                  IconButton(
+                                    icon: const Icon(Icons.cancel_outlined, size: 18, color: Color(0xFFEF4444)),
+                                    tooltip: L10n.btnCancel.get(sub),
+                                    onPressed: () {
+                                      LeaveRequestService.cancelRequest(req.id);
+                                      setState(() {});
+                                    },
+                                  ),
+                                ],
+                              ],
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

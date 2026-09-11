@@ -453,4 +453,151 @@ class L10n {
       default: return '';
     }
   }
+
+  // ===========================================================================
+  // LEAVE REQUESTS & APPROVAL NOTIFICATIONS
+  // ===========================================================================
+  static const tabLeaveRequest = AppText(
+    en: 'Request Leave',
+    th: 'ขอวันหยุด',
+    my: 'ခွင့်တောင်းဆိုခြင်း',
+  );
+
+  static const leaveRequestTitle = AppText(
+    en: 'Submit Leave Request',
+    th: 'แบบฟอร์มขอวันหยุด & ลาป่วย',
+    my: 'ခွင့်တောင်းဆိုလွှာ',
+  );
+
+  static const leaveType = AppText(
+    en: 'Leave Type',
+    th: 'ประเภทการลา',
+    my: 'ခွင့်အမျိုးအစား',
+  );
+
+  static const typeDayOff = AppText(
+    en: 'Day-off',
+    th: 'วันหยุดปกติ',
+    my: 'နားရက်',
+  );
+
+  static const typeSick = AppText(
+    en: 'Sick Leave',
+    th: 'ลาป่วย',
+    my: 'ဖျားနာခွင့်',
+  );
+
+  static const selectDate = AppText(
+    en: 'Requested Date',
+    th: 'วันที่ต้องการขอลา',
+    my: 'ခွင့်ယူမည့်ရက်',
+  );
+
+  static const advanceNoticeRule = AppText(
+    en: 'Must request at least 1 day in advance (Tomorrow onwards)',
+    th: 'ต้องขอล่วงหน้าอย่างน้อย 1 วัน (เริ่มตั้งแต่วันพรุ่งนี้เป็นต้นไป)',
+    my: 'အနည်းဆုံး ၁ ရက် ကြိုတင်တောင်းဆိုရမည် (မနက်ဖြန်မှစ၍)',
+  );
+
+  static const noteLabel = AppText(
+    en: 'Reason / Note',
+    th: 'หมายเหตุ / เหตุผล',
+    my: 'အကြောင်းပြချက် / မှတ်ချက်',
+  );
+
+  static const noteHint = AppText(
+    en: 'Enter note or reason (Optional)',
+    th: 'ระบุเหตุผลหรือรายละเอียดเพิ่มเติม (ถ้ามี)',
+    my: 'အကြောင်းပြချက် ထည့်သွင်းပါ (မထည့်လည်းရပါသည်)',
+  );
+
+  static const submitRequestBtn = AppText(
+    en: 'Submit Request',
+    th: 'ส่งคำขอวันหยุด',
+    my: 'တောင်းဆိုလွှာ တင်ရန်',
+  );
+
+  static const requestSubmittedSuccess = AppText(
+    en: 'Leave request submitted! Waiting for Admin review.',
+    th: 'ส่งคำขอเรียบร้อยแล้ว! กำลังรอผู้ดูแลตรวจสอบ',
+    my: 'ခွင့်တောင်းဆိုလွှာ တင်ပြီးပါပြီ။ စီမံခန့်ခွဲသူ စိစစ်မှုကို စောင့်ဆိုင်းနေပါသည်။',
+  );
+
+  static const myRequestsTitle = AppText(
+    en: 'My Leave Requests History',
+    th: 'ประวัติคำขอวันหยุดของฉัน',
+    my: 'ကျွန်ုပ်၏ ခွင့်တောင်းဆိုမှု မှတ်တမ်း',
+  );
+
+  static const noRequestsYet = AppText(
+    en: 'No leave requests submitted yet',
+    th: 'ยังไม่มีประวัติการขอวันหยุด',
+    my: 'ခွင့်တောင်းဆိုမှု မှတ်တမ်း မရှိသေးပါ',
+  );
+
+  static const statusPending = AppText(
+    en: 'Pending',
+    th: 'รออนุมัติ',
+    my: 'စိစစ်ဆဲ',
+  );
+
+  static const statusApproved = AppText(
+    en: 'Approved',
+    th: 'อนุมัติแล้ว',
+    my: 'ခွင့်ပြုပြီး',
+  );
+
+  static const statusRejected = AppText(
+    en: 'Ignored',
+    th: 'ไม่อนุมัติ',
+    my: 'ငြင်းပယ်သည်',
+  );
+
+  static const btnCancel = AppText(
+    en: 'Cancel',
+    th: 'ยกเลิก',
+    my: 'ပယ်ဖျက်ရန်',
+  );
+
+  static const btnApprove = AppText(
+    en: 'Approve',
+    th: 'อนุมัติ',
+    my: 'အတည်ပြုသည်',
+  );
+
+  static const btnIgnore = AppText(
+    en: 'Ignore',
+    th: 'ปฏิเสธ',
+    my: 'ငြင်းပယ်သည်',
+  );
+
+  static const adminBellTitle = AppText(
+    en: 'Pending Leave Requests',
+    th: 'คำขอวันหยุดรอการอนุมัติ',
+    my: 'စိစစ်ရန် ခွင့်တောင်းဆိုမှုများ',
+  );
+
+  static const noPendingNotif = AppText(
+    en: 'No pending leave requests at this time',
+    th: 'ไม่มีคำขอวันหยุดที่รออนุมัติในขณะนี้',
+    my: 'လောလောဆယ် စိစစ်ရန် ခွင့်တောင်းဆိုမှု မရှိပါ',
+  );
+
+  static const conflictNotice = AppText(
+    en: 'other staff off on this day',
+    th: 'คนหยุดในวันเดียวกันนี้แล้ว',
+    my: 'ဦး ဤရက်တွင် နားရက်ရှိပြီးဖြစ်သည်',
+  );
+
+  static const errDateTooSoon = AppText(
+    en: 'Cannot request for today or past dates. Please request at least 1 day in advance.',
+    th: 'ไม่สามารถขอสำหรับวันนี้หรืออดีตได้ กรุณาขอล่วงหน้าอย่างน้อย 1 วัน',
+    my: 'ယနေ့ သို့မဟုတ် ယခင်ရက်အတွက် တောင်းဆို၍မရပါ။ အနည်းဆုံး ၁ ရက် ကြိုတင်တောင်းဆိုပါ။',
+  );
+
+  static const errDuplicateDate = AppText(
+    en: 'You already have an active request for this date',
+    th: 'คุณมีคำขอสำหรับวันที่นี้อยู่แล้ว',
+    my: 'ဤရက်အတွက် တောင်းဆိုထားပြီးဖြစ်ပါသည်',
+  );
 }

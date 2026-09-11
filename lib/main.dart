@@ -12,6 +12,9 @@ import 'services/auth_service.dart';
 import 'services/image_saver.dart';
 import 'services/payroll_engine.dart';
 import 'services/localization_service.dart';
+import 'models/leave_request.dart';
+import 'services/leave_request_service.dart';
+import 'widgets/leave_requests_modal.dart';
 import 'widgets/employee_portal_screen.dart';
 import 'widgets/language_toggle.dart';
 import 'widgets/login_screen.dart';
@@ -83,6 +86,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   @override
   void initState() {
     super.initState();
+    LeaveRequestService.initialize();
     _employees = List.from(initialEmployees);
     _currentSession = AuthService.loadSavedSession(_employees);
     _initializeData();
@@ -559,6 +563,93 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
             child: LanguageToggle(isCompact: true),
+          ),
+          // Leave Requests Notification Bell
+          ValueListenableBuilder<int>(
+            valueListenable: LeaveRequestService.pendingCountNotifier,
+            builder: (context, pendingCount, _) {
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined, size: 20, color: Color(0xFF38BDF8)),
+                    tooltip: 'คำขอวันหยุดรออนุมัติ ($pendingCount)',
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => LeaveRequestsModal(
+                          attendanceLogs: _attendanceLogs,
+                          onApprove: (req) async {
+                            final success = await LeaveRequestService.approveRequest(
+                              req,
+                              onAttendanceCreated: (date, epCode, nickname, category, note) async {
+                                final created = await ApiService.createAttendance(
+                                  date: date,
+                                  epCode: epCode,
+                                  nickname: nickname,
+                                  category: category,
+                                  note: note,
+                                );
+                                // Also update local state
+                                _attendanceLogs.add({
+                                  'date': date,
+                                  'ep_code': epCode,
+                                  'nickname': nickname,
+                                  'category': category,
+                                  'shift': 'Normal',
+                                  'units': 1.0,
+                                  'note': note,
+                                });
+                                return created || true;
+                              },
+                            );
+
+                            if (success && mounted) {
+                              await _fetchDataAndRecalculate();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('✅ อนุมัติคำขอวันหยุดของ ${req.nickname} (${req.dateStr}) เรียบร้อยแล้ว'),
+                                  backgroundColor: const Color(0xFF10B981),
+                                ),
+                              );
+                            }
+                          },
+                          onReject: (req) {
+                            LeaveRequestService.rejectRequest(req);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('ปฏิเสธคำขอของ ${req.nickname} แล้ว'),
+                                  backgroundColor: const Color(0xFF64748B),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                  if (pendingCount > 0)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          '$pendingCount',
+                          style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
           // Instant Cloud Refresh Button
           IconButton(
