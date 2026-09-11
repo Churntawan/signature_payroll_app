@@ -1198,6 +1198,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   attendanceLogs: _attendanceLogs,
                   onAddAttendance: (date) => _showLogAttendanceDialog(initialDate: date),
                   onAutoScheduleMonth: (monthDate) => _showAutoScheduleForMonthDialog(monthDate),
+                  onDeleteAttendance: _handleDeleteAttendance,
                 )
               : (_attendanceLogs.isEmpty
                   ? const Center(
@@ -1261,6 +1262,43 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             subtitle: Text(
                               'Date: ${log['date']}  |  Units: ${log['units']}  |  Shift: ${log['shift']}${(log['note'] != null && log['note'].toString().isNotEmpty) ? '  • Note: ${log['note']}' : ''}',
                               style: const TextStyle(fontSize: 12),
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                              tooltip: 'ยกเลิก / ลบรายการนี้',
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (c) => AlertDialog(
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    title: const Row(
+                                      children: [
+                                        Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
+                                        SizedBox(width: 8),
+                                        Text('ยืนยันยกเลิกรายการ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                    content: Text('ต้องการยกเลิก ${log['category']} ของ ${log['nickname']} (${log['ep_code']}) ในวันที่ ${log['date']} หรือไม่?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(c, false),
+                                        child: const Text('ไม่ยกเลิก'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.pop(c, true),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        child: const Text('ยืนยันยกเลิก'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  _handleDeleteAttendance(log);
+                                }
+                              },
                             ),
                           ),
                         );
@@ -2094,6 +2132,56 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   }
 
   // ===========================================================================
+  // ATTENDANCE MANAGEMENT & ACTIONS
+  // ===========================================================================
+
+  Future<void> _handleDeleteAttendance(Map<String, dynamic> log) async {
+    final id = log['id'];
+    final date = log['date']?.toString() ?? '';
+    final epCode = log['ep_code']?.toString() ?? '';
+    final nickname = log['nickname']?.toString() ?? '';
+    final category = log['category']?.toString() ?? 'Day-off';
+
+    // 1. Optimistic UI update: Remove locally immediately
+    setState(() {
+      _attendanceLogs.removeWhere((a) {
+        if (id != null && a['id'] != null) return a['id'] == id;
+        return a['ep_code'] == epCode && a['date'] == date && a['category'] == category;
+      });
+    });
+
+    // 2. Call Supabase API to delete
+    final ok = await ApiService.deleteAttendance(
+      id: id,
+      date: date,
+      epCode: epCode,
+      category: category,
+    );
+
+    // 3. Recalculate payroll & re-fetch
+    await _fetchDataAndRecalculate();
+
+    if (mounted) {
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🗑️ ยกเลิกรายการ $category ของ $nickname ($date) สำเร็จแล้ว'),
+            backgroundColor: const Color(0xFF10B981),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ ไม่สามารถลบข้อมูลจาก Cloud ได้ กรุณาลองใหม่อีกครั้ง'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // ===========================================================================
   // DIALOGS: AUTO-SCHEDULE DAY-OFFS (MONTH-BY-MONTH & PERIOD), ADD ATTENDANCE
   // ===========================================================================
 
@@ -2521,6 +2609,88 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               ),
               actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
               actions: [
+                OutlinedButton.icon(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (c) => AlertDialog(
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              title: const Row(
+                                children: [
+                                  Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
+                                  SizedBox(width: 8),
+                                  Text('ยืนยันล้างวันหยุดทั้งเดือน', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                              content: Text('ต้องการยกเลิกและลบวันหยุดทั้งหมดของพนักงานทุกคนในเดือน $monthName หรือไม่?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(c, false),
+                                  child: const Text('ไม่ลบ'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(c, true),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: const Text('ยืนยันล้างทั้งเดือน'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            setDlgState(() => isSubmitting = true);
+                            final messenger = ScaffoldMessenger.of(context);
+                            final navigator = Navigator.of(ctx);
+
+                            try {
+                              final startStr = '$monthPrefix-01';
+                              final endStr = '$monthPrefix-$daysInMonth';
+                              await ApiService.clearDayOffsForRange(
+                                startDate: startStr,
+                                endDate: endStr,
+                              );
+
+                              if (mounted) {
+                                setState(() {
+                                  _attendanceLogs.removeWhere((a) =>
+                                    a['category'] == 'Day-off' &&
+                                    (a['date']?.toString() ?? '').startsWith(monthPrefix)
+                                  );
+                                });
+                              }
+
+                              await _fetchDataAndRecalculate();
+                              navigator.pop();
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text('🗑️ ล้างวันหยุดทั้งหมดของเดือน $monthName เรียบร้อยแล้ว'),
+                                  backgroundColor: const Color(0xFF10B981),
+                                  duration: const Duration(seconds: 3),
+                                ),
+                              );
+                            } catch (e) {
+                              setDlgState(() => isSubmitting = false);
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text('⚠️ เกิดข้อผิดพลาด: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Color(0xFFFCA5A5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  ),
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 18, color: Colors.red),
+                  label: const Text('ล้างวันหยุดทั้งเดือนนี้'),
+                ),
                 TextButton(
                   onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
                   child: const Text('ยกเลิก (Cancel)'),

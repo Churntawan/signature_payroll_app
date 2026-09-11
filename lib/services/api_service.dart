@@ -373,4 +373,33 @@ class ApiService {
       return false;
     }
   }
+
+  // 15. Delete a single Attendance entry from Supabase Cloud
+  static Future<bool> deleteAttendance({
+    dynamic id,
+    String? date,
+    String? epCode,
+    String? category,
+  }) async {
+    try {
+      String query;
+      if (id != null && id.toString().isNotEmpty) {
+        query = '$supabaseUrl/attendance_log?id=eq.$id';
+      } else if (date != null && epCode != null) {
+        query = '$supabaseUrl/attendance_log?date=eq.$date&ep_code=eq.$epCode';
+        if (category != null) {
+          query += '&category=eq.$category';
+        }
+      } else {
+        return false;
+      }
+      final res = await http.delete(
+        Uri.parse(query),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
 }

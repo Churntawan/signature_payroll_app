@@ -6,6 +6,7 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
   final List<Map<String, dynamic>> attendanceLogs;
   final Function(DateTime date) onAddAttendance;
   final Function(DateTime monthDate)? onAutoScheduleMonth;
+  final Function(Map<String, dynamic> log)? onDeleteAttendance;
 
   const TwoMonthCalendarPlanner({
     super.key,
@@ -13,6 +14,7 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
     required this.attendanceLogs,
     required this.onAddAttendance,
     this.onAutoScheduleMonth,
+    this.onDeleteAttendance,
   });
 
   @override
@@ -540,16 +542,65 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
                             note.isNotEmpty ? '$cat • Note: $note' : cat,
                             style: const TextStyle(fontSize: 12),
                           ),
-                          trailing: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: dotColor.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              cat,
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: dotColor),
-                            ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: dotColor.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  cat,
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: dotColor),
+                                ),
+                              ),
+                              if (onDeleteAttendance != null) ...[
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                                  tooltip: 'ยกเลิกวันหยุด / ลบรายการนี้',
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () async {
+                                    final nickname = log['nickname'] ?? '';
+                                    final epCode = log['ep_code'] ?? '';
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (c) => AlertDialog(
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        title: const Row(
+                                          children: [
+                                            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 22),
+                                            SizedBox(width: 8),
+                                            Text('ยืนยันยกเลิกวันหยุด', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                          ],
+                                        ),
+                                        content: Text('ต้องการยกเลิกวันหยุดของ $nickname ($epCode) ในวันที่ ${DateFormat('dd/MM/yyyy').format(date)} หรือไม่?'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(c, false),
+                                            child: const Text('ไม่ยกเลิก'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () => Navigator.pop(c, true),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              foregroundColor: Colors.white,
+                                            ),
+                                            child: const Text('ยืนยันยกเลิก'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                    if (confirm == true) {
+                                      Navigator.pop(ctx);
+                                      onDeleteAttendance!(log);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ],
                           ),
                         );
                       },
