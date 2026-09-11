@@ -111,6 +111,7 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildLegendItem(const Color(0xFF10B981), 'Day-off (วันหยุด)'),
+              _buildLegendItem(const Color(0xFF0284C7), 'Work Days (วันทำงาน)'),
               _buildLegendItem(const Color(0xFFEF4444), 'Sick Leave (ลาป่วย)'),
               _buildLegendItem(const Color(0xFFF59E0B), 'Half-day (ครึ่งวัน)'),
               _buildLegendItem(const Color(0xFF8B5CF6), 'OT Days (ทำงานวันหยุด)'),
@@ -443,6 +444,9 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
     } else if (cat.contains('OT')) {
       bg = const Color(0xFFEDE9FE);
       fg = const Color(0xFF5B21B6);
+    } else if (cat == 'Work Days') {
+      bg = const Color(0xFFE0F2FE);
+      fg = const Color(0xFF0369A1);
     }
 
     return Container(
@@ -542,6 +546,7 @@ class TwoMonthCalendarPlanner extends StatelessWidget {
                         final note = log['note']?.toString() ?? '';
 
                         Color dotColor = const Color(0xFF10B981);
+                        if (cat == 'Work Days') dotColor = const Color(0xFF0284C7);
                         if (cat == 'Sick') dotColor = const Color(0xFFEF4444);
                         if (cat == 'Half-day') dotColor = const Color(0xFFF59E0B);
                         if (cat.contains('OT')) dotColor = const Color(0xFF8B5CF6);

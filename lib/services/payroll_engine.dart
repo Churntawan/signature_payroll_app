@@ -181,6 +181,66 @@ class PayrollEngine {
     );
   }
 
+  /// Apply real attendance logs to payroll record, computing actual work days,
+  /// day-offs, sick leaves, excess day-offs, and resulting base pay.
+  static void applyAttendance(PayrollRecord rec, List<Map<String, dynamic>> attendanceLogs) {
+    rec.attendanceDetails = attendanceLogs;
+
+    final explicitWorkDays = attendanceLogs
+        .where((a) => a['category'] == 'Work Days')
+        .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
+        .round();
+    final loggedDayOffs = attendanceLogs
+        .where((a) => a['category'] == 'Day-off')
+        .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
+        .round();
+    rec.sickLeave = attendanceLogs
+        .where((a) => a['category'] == 'Sick')
+        .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
+        .round();
+    rec.halfDays = attendanceLogs.where((a) => a['category'] == 'Half-day').length;
+    rec.otDays = attendanceLogs
+        .where((a) => a['category'] == 'OT Days')
+        .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
+        .round();
+
+    // Day-off quota: if explicitly logged > 0 use it; otherwise default to standard 4 days (unless prorated)
+    if (loggedDayOffs > 0) {
+      rec.dayOff = loggedDayOffs;
+    } else if (!rec.isProrate) {
+      rec.dayOff = 4;
+    } else {
+      rec.dayOff = 0;
+    }
+
+    // Work Days calculation:
+    // - Daily wage with explicit 'Work Days' logs: use explicit count
+    // - Prorated employee: workedDays minus day-offs and sick leaves
+    // - Standard employee: 30 days minus effective day-offs (min 4) and sick leaves
+    if (rec.wageType == 'Daily' && explicitWorkDays > 0) {
+      rec.workDays = explicitWorkDays;
+    } else if (rec.isProrate) {
+      rec.workDays = (rec.workedDays - rec.dayOff - rec.sickLeave).clamp(0, 30);
+    } else {
+      rec.workDays = (30 - rec.dayOff - rec.sickLeave).clamp(0, 30);
+    }
+
+    // Handle base pay and excess day-offs deduction
+    if (rec.wageType == 'Daily') {
+      rec.basePay = (rec.dailyRate * rec.workDays).roundToDouble();
+      rec.excessDayOffDays = 0;
+      rec.excessDayOffDeduction = 0.0;
+    } else {
+      if (rec.dayOff > 4) {
+        rec.excessDayOffDays = rec.dayOff - 4;
+        rec.excessDayOffDeduction = (rec.excessDayOffDays * rec.dailyRate).roundToDouble();
+      } else {
+        rec.excessDayOffDays = 0;
+        rec.excessDayOffDeduction = 0.0;
+      }
+    }
+  }
+
   static String _formatShortDate(String? dStr) {
     if (dStr == null || dStr.isEmpty) return '';
     try {
@@ -207,6 +267,14 @@ class PayrollEngine {
     buffer.writeln('────────────────────');
     buffer.writeln('🏖️ *Attendance & Time-off (สถิติและวันหยุด/วันลา):*');
     buffer.writeln('  • Work Days: ${record.workDays} days');
+
+    if (record.workDayLogs.isNotEmpty) {
+      final workDates = record.workDayLogs
+          .map((l) => _formatShortDate(l['date']?.toString()))
+          .where((s) => s.isNotEmpty)
+          .join(', ');
+      buffer.writeln('  • Logged Work Days: ${record.workDayLogs.length} days ($workDates)');
+    }
 
     final offDates = record.dayOffLogs
         .map((l) => _formatShortDate(l['date']?.toString()))

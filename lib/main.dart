@@ -153,32 +153,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           }
         }).toList();
         empAtt.sort((a, b) => (a['date']?.toString() ?? '').compareTo(b['date']?.toString() ?? ''));
-        rec.attendanceDetails = empAtt;
-
-        if (empAtt.isNotEmpty) {
-          rec.dayOff = empAtt.where((a) => a['category'] == 'Day-off').fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0)).round();
-          rec.sickLeave = empAtt.where((a) => a['category'] == 'Sick').fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0)).round();
-          rec.halfDays = empAtt.where((a) => a['category'] == 'Half-day').length;
-          rec.otDays = empAtt.where((a) => a['category'] == 'OT Days').fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0)).round();
-          if (!rec.isProrate) {
-            rec.workDays = (30 - rec.dayOff - rec.sickLeave).clamp(0, 30);
-          }
-        }
-
-        // Handle daily wage base pay and excess day-offs deduction
-        if (rec.wageType == 'Daily') {
-          rec.basePay = (rec.dailyRate * rec.workDays).roundToDouble();
-          rec.excessDayOffDays = 0;
-          rec.excessDayOffDeduction = 0.0;
-        } else {
-          if (rec.dayOff > 4) {
-            rec.excessDayOffDays = rec.dayOff - 4;
-            rec.excessDayOffDeduction = (rec.excessDayOffDays * rec.dailyRate).roundToDouble();
-          } else {
-            rec.excessDayOffDays = 0;
-            rec.excessDayOffDeduction = 0.0;
-          }
-        }
+        PayrollEngine.applyAttendance(rec, empAtt);
 
         // Aggregate real adjustments
         final empAdj = _adjustments.where((a) => a['ep_code'] == emp.epCode).toList();
@@ -1892,6 +1867,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         record.sickLogs.isNotEmpty ||
         record.halfDayLogs.isNotEmpty ||
         record.otDayLogs.isNotEmpty ||
+        record.workDayLogs.isNotEmpty ||
         record.otherLeaveLogs.isNotEmpty;
 
     return Container(
@@ -1922,11 +1898,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
             )
           else ...[
+            if (record.workDayLogs.isNotEmpty)
+              _buildLeaveDateRow(
+                'วันทำงาน (Work):',
+                formatDates(record.workDayLogs),
+                const Color(0xFF0284C7),
+              ),
             if (record.dayOffLogs.isNotEmpty)
               _buildLeaveDateRow(
                 'วันหยุด (OFF):',
                 formatDates(record.dayOffLogs),
-                const Color(0xFF0284C7),
+                const Color(0xFF10B981),
               ),
             if (record.sickLogs.isNotEmpty)
               _buildLeaveDateRow(

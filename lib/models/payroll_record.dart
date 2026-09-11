@@ -104,6 +104,11 @@ class PayrollRecord {
         return cat == 'OT Days' || cat == 'OT';
       }).toList();
 
+  List<Map<String, dynamic>> get workDayLogs => attendanceDetails.where((a) {
+        final cat = (a['category'] ?? a['status'])?.toString();
+        return cat == 'Work Days' || cat == 'Work' || cat == 'Work Day';
+      }).toList();
+
   List<Map<String, dynamic>> get otherLeaveLogs => attendanceDetails.where((a) {
         final cat = (a['category'] ?? a['status'])?.toString();
         return !['Day-off', 'OFF', 'Sick', 'Sick Leave', 'Half-day', 'Half', 'OT Days', 'OT', 'Work Days'].contains(cat);

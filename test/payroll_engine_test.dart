@@ -160,6 +160,48 @@ void main() {
       // Custom daily rate via [DailyRate:450]
       final empCustomRate = empMonthlyToDaily.copyWithWelfareSettings(dailyRate: 450.0);
       expect(empCustomRate.dailyWageRate, 450.0);
+
+      // Wan exact scenario with attendance logs (2 sick days, 0 logged day-offs)
+      final empWanFull = Employee(
+        epCode: 'EP09',
+        nickname: 'Wan',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 10',
+        stayOutside: 'Yes',
+        startDate: DateTime(2026, 1, 1),
+        note: '[Wage:Daily]',
+      );
+      final recWanWithAtt = PayrollEngine.calculateEmployeeRecord(employee: empWanFull, period: '2026-09')!;
+      expect(recWanWithAtt.dailyRate, 400.0);
+      expect(recWanWithAtt.housingAllowance, 1000.0);
+
+      // Apply attendance with 2 sick days (13/08, 26/08) and 0 day-off logs
+      final wanAttendance = [
+        {'date': '2026-08-13', 'category': 'Sick', 'units': 1.0},
+        {'date': '2026-08-26', 'category': 'Sick', 'units': 1.0},
+      ];
+      PayrollEngine.applyAttendance(recWanWithAtt, wanAttendance);
+
+      // Verification of Wan's exact business rules:
+      // Standard 30 days - 4 standard day-offs - 2 sick leaves = 24 work days
+      expect(recWanWithAtt.dayOff, 4);
+      expect(recWanWithAtt.sickLeave, 2);
+      expect(recWanWithAtt.workDays, 24);
+      expect(recWanWithAtt.basePay, 9600.0); // 24 days @ 400 THB = 9,600 THB
+      expect(recWanWithAtt.housingAllowance, 1000.0);
+      expect(recWanWithAtt.netPay, 10600.0); // 9,600 + 1,000 = 10,600 THB
+
+      // Scenario: Daily worker with explicit 'Work Days' logged (e.g. 21 days)
+      final recWanExplicit = PayrollEngine.calculateEmployeeRecord(employee: empWanFull, period: '2026-09')!;
+      final explicitLogs = List.generate(21, (i) => {
+        'date': '2026-08-${(i + 11).toString().padLeft(2, '0')}',
+        'category': 'Work Days',
+        'units': 1.0,
+      });
+      PayrollEngine.applyAttendance(recWanExplicit, explicitLogs);
+      expect(recWanExplicit.workDays, 21);
+      expect(recWanExplicit.basePay, 21 * 400.0); // 8,400 THB
     });
 
     test('Housing allowance 1-month tenure rule and mid-cycle forfeiture', () {
