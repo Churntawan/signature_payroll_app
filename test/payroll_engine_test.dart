@@ -143,6 +143,23 @@ void main() {
       record.basePay = (record.dailyRate * record.workDays).roundToDouble();
       expect(record.basePay, 9000);
       expect(record.netPay, 9000);
+
+      // Monthly employee (12,000 THB) switched to daily -> auto dailyRate is 12000/30 = 400
+      final empMonthlyToDaily = Employee(
+        epCode: 'EP09',
+        nickname: 'Wan',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 10',
+        note: '[Wage:Daily]',
+      );
+      expect(empMonthlyToDaily.dailyWageRate, 400.0);
+      final recWan = PayrollEngine.calculateEmployeeRecord(employee: empMonthlyToDaily, period: '2026-09');
+      expect(recWan!.dailyRate, 400.0);
+
+      // Custom daily rate via [DailyRate:450]
+      final empCustomRate = empMonthlyToDaily.copyWithWelfareSettings(dailyRate: 450.0);
+      expect(empCustomRate.dailyWageRate, 450.0);
     });
 
     test('Housing allowance 1-month tenure rule and mid-cycle forfeiture', () {

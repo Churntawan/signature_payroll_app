@@ -4516,6 +4516,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   void _showEditEmployeeWelfareDialog(Employee emp) {
     String wageType = emp.wageType;
     String stayOutside = emp.stayOutside;
+    final dailyRateCtrl = TextEditingController(
+      text: emp.dailyWageRate.toStringAsFixed(0),
+    );
     final housingCtrl = TextEditingController(
       text: emp.housingAllowance > 0 ? emp.housingAllowance.toStringAsFixed(0) : '1000',
     );
@@ -4548,6 +4551,18 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           if (val != null) setDialogState(() => wageType = val);
                         },
                       ),
+                      if (wageType == 'Daily') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: dailyRateCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'อัตราค่าจ้างรายวัน (฿/วัน)',
+                            helperText: 'ค่าเริ่มต้นคำนวณจาก (ฐานเงินเดือน ÷ 30 วัน) หรือปรับเปลี่ยนตามต้องการ',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.all(10),
@@ -4558,7 +4573,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         ),
                         child: Text(
                           wageType == 'Daily'
-                              ? 'ℹ️ พนักงานรายวัน: ฐานเงินเดือนจะคิดจาก (อัตราค่าจ้างรายวัน × วันทำงานจริง)'
+                              ? 'ℹ️ พนักงานรายวัน: ฐานเงินเดือนจะคิดจาก (อัตราค่าจ้างรายวัน × วันทำงานจริงในแต่ละงวด)'
                               : 'ℹ️ พนักงานรายเดือน: ฐานเงินเดือนคิดตามปกติ โควตาวันหยุด 4 ครั้ง/งวด (หยุดเกินจะหักตามอัตราวัน)',
                           style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
                         ),
@@ -4614,8 +4629,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     final allowance = stayOutside.toLowerCase() == 'yes'
                         ? (double.tryParse(housingCtrl.text) ?? 1000.0)
                         : 0.0;
+                    final customDailyRate = wageType == 'Daily'
+                        ? double.tryParse(dailyRateCtrl.text)
+                        : null;
                     final updatedEmp = emp.copyWithWelfareSettings(
                       wageType: wageType,
+                      dailyRate: customDailyRate,
                       stayOutside: stayOutside,
                       housingAllowance: allowance,
                     );

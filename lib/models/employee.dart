@@ -68,6 +68,18 @@ class Employee {
   bool get isDailyWage => note.contains('[Wage:Daily]');
   String get wageType => isDailyWage ? 'Daily' : 'Monthly';
 
+  /// Daily wage rate: parses [DailyRate:xxx] or calculates baseSalary / 30 if baseSalary >= 1000
+  double get dailyWageRate {
+    final match = RegExp(r'\[DailyRate:([0-9.]+)\]').firstMatch(note);
+    if (match != null) {
+      return double.tryParse(match.group(1) ?? '') ?? (baseSalary >= 1000 ? (baseSalary / 30.0).roundToDouble() : baseSalary);
+    }
+    if (baseSalary >= 1000) {
+      return (baseSalary / 30.0).roundToDouble();
+    }
+    return baseSalary > 0 ? baseSalary : 400.0;
+  }
+
   /// Housing allowance amount (defaults to 1000.0 if stayOutside is Yes, unless custom tag is set)
   double get housingAllowance {
     if (stayOutside.toLowerCase() != 'yes') return 0.0;
@@ -92,11 +104,12 @@ class Employee {
     return copyWith(note: withPreferredDayOffs(days));
   }
 
-  /// Create a new note string with updated wage type and housing allowance tags
-  String withWelfareSettings({String? wageType, double? housingAllowance}) {
+  /// Create a new note string with updated wage type, daily rate, and housing allowance tags
+  String withWelfareSettings({String? wageType, double? housingAllowance, double? dailyRate}) {
     var clean = note
         .replaceAll(RegExp(r'\[Wage:(Monthly|Daily)\]'), '')
         .replaceAll(RegExp(r'\[Housing:[0-9.]+\]'), '')
+        .replaceAll(RegExp(r'\[DailyRate:[0-9.]+\]'), '')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
@@ -104,6 +117,10 @@ class Employee {
     final finalWage = wageType ?? this.wageType;
     if (finalWage == 'Daily') {
       tags.add('[Wage:Daily]');
+      final rate = dailyRate ?? this.dailyWageRate;
+      if (rate > 0) {
+        tags.add('[DailyRate:${rate.toStringAsFixed(0)}]');
+      }
     }
 
     final finalHousing = housingAllowance ?? this.housingAllowance;
@@ -117,10 +134,10 @@ class Employee {
   }
 
   /// Return a new Employee instance with updated welfare settings
-  Employee copyWithWelfareSettings({String? wageType, double? housingAllowance, String? stayOutside}) {
+  Employee copyWithWelfareSettings({String? wageType, double? housingAllowance, double? dailyRate, String? stayOutside}) {
     return copyWith(
       stayOutside: stayOutside,
-      note: withWelfareSettings(wageType: wageType, housingAllowance: housingAllowance),
+      note: withWelfareSettings(wageType: wageType, housingAllowance: housingAllowance, dailyRate: dailyRate),
     );
   }
 }

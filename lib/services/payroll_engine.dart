@@ -102,7 +102,7 @@ class PayrollEngine {
 
     // 4. Calculate working days and daily rate
     final isDaily = employee.isDailyWage;
-    final dailyRate = isDaily ? employee.baseSalary : (employee.baseSalary / 30.0);
+    final dailyRate = isDaily ? employee.dailyWageRate : (employee.baseSalary / 30.0);
     int workedDays = 30;
     double basePay = employee.baseSalary;
 
