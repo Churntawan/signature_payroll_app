@@ -8,6 +8,8 @@ import '../models/payroll_record.dart';
 import '../services/api_service.dart';
 import '../services/image_saver.dart';
 import '../services/payroll_engine.dart';
+import '../services/localization_service.dart';
+import 'language_toggle.dart';
 
 class EmployeePortalScreen extends StatefulWidget {
   final Employee employee;
@@ -143,7 +145,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
     return today.isAtSameMomentAs(payDay) || today.isAfter(payDay);
   }
 
-  Future<void> _downloadPayslipImage() async {
+  Future<void> _downloadPayslipImage(SubLanguage sub) async {
     if (_currentRecord == null) return;
     setState(() => _isExporting = true);
     try {
@@ -161,7 +163,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✅ บันทึกรูปภาพสลิปเงินเดือนเรียบร้อยแล้ว ($fileName)'),
+              content: Text('✅ ${L10n.slipImageSaved.get(sub)} ($fileName)'),
               backgroundColor: const Color(0xFF10B981),
             ),
           );
@@ -170,7 +172,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาดในการบันทึกรูป: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error saving image: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -183,131 +185,145 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.person, size: 18, color: Colors.white),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${widget.employee.nickname} (${widget.employee.epCode})',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    'พนักงาน • ${widget.employee.payGroup}',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          // Period Selector
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF334155)),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: widget.periods.contains(_selectedPeriod) ? _selectedPeriod : widget.periods.first,
-                dropdownColor: const Color(0xFF0F172A),
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                items: widget.periods.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                onChanged: (val) {
-                  if (val != null && val != _selectedPeriod) {
-                    setState(() => _selectedPeriod = val);
-                    _fetchEmployeeData();
-                  }
-                },
-              ),
-            ),
-          ),
-
-          // Logout Button
-          IconButton(
-            icon: const Icon(Icons.logout, size: 20, color: Color(0xFFEF4444)),
-            tooltip: 'ออกจากระบบ (Logout)',
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  backgroundColor: const Color(0xFF1E293B),
-                  title: const Text('ยืนยันออกจากระบบ', style: TextStyle(color: Colors.white)),
-                  content: const Text('คุณต้องการออกจากระบบใช่หรือไม่?', style: TextStyle(color: Color(0xFFCBD5E1))),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        widget.onLogout();
-                      },
-                      child: const Text('ออกจากระบบ'),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF38BDF8)))
-          : IndexedStack(
-              index: _currentTab,
+    return ValueListenableBuilder<SubLanguage>(
+      valueListenable: L10n.currentSubLang,
+      builder: (context, sub, _) {
+        return Scaffold(
+          backgroundColor: const Color(0xFF0F172A),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF1E293B),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            title: Row(
               children: [
-                _buildPayslipTab(isMobile),
-                _buildScheduleTab(isMobile),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0284C7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.person, size: 18, color: Colors.white),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${widget.employee.nickname} (${widget.employee.epCode})',
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '${L10n.roleStaff.get(sub)} • ${widget.employee.payGroup}',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentTab,
-        backgroundColor: const Color(0xFF1E293B),
-        indicatorColor: const Color(0xFF0284C7).withOpacity(0.3),
-        onDestinationSelected: (idx) => setState(() => _currentTab = idx),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined, color: Color(0xFF94A3B8)),
-            selectedIcon: Icon(Icons.receipt_long, color: Color(0xFF38BDF8)),
-            label: 'สลิปเงินเดือน',
+            actions: [
+              // Period Selector
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: widget.periods.contains(_selectedPeriod) ? _selectedPeriod : widget.periods.first,
+                    dropdownColor: const Color(0xFF0F172A),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5),
+                    items: widget.periods.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                    onChanged: (val) {
+                      if (val != null && val != _selectedPeriod) {
+                        setState(() => _selectedPeriod = val);
+                        _fetchEmployeeData();
+                      }
+                    },
+                  ),
+                ),
+              ),
+
+              // Language Switcher Toggle
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                child: const LanguageToggle(isCompact: true),
+              ),
+
+              // Logout Button
+              IconButton(
+                icon: const Icon(Icons.logout, size: 18, color: Color(0xFFEF4444)),
+                tooltip: L10n.logoutButton.get(sub),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      backgroundColor: const Color(0xFF1E293B),
+                      title: Text(L10n.logoutConfirmTitle.get(sub), style: const TextStyle(color: Colors.white, fontSize: 16)),
+                      content: Text(L10n.logoutConfirmMessage.get(sub), style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 13)),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(L10n.cancel.get(sub), style: const TextStyle(color: Color(0xFF94A3B8))),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            widget.onLogout();
+                          },
+                          child: Text(L10n.logoutButton.get(sub)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 4),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined, color: Color(0xFF94A3B8)),
-            selectedIcon: Icon(Icons.calendar_month, color: Color(0xFF38BDF8)),
-            label: 'ตารางวันหยุด & เวลา',
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF38BDF8)))
+              : IndexedStack(
+                  index: _currentTab,
+                  children: [
+                    _buildPayslipTab(isMobile, sub),
+                    _buildScheduleTab(isMobile, sub),
+                  ],
+                ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _currentTab,
+            backgroundColor: const Color(0xFF1E293B),
+            indicatorColor: const Color(0xFF0284C7).withOpacity(0.3),
+            onDestinationSelected: (idx) => setState(() => _currentTab = idx),
+            destinations: [
+              NavigationDestination(
+                icon: const Icon(Icons.receipt_long_outlined, color: Color(0xFF94A3B8)),
+                selectedIcon: const Icon(Icons.receipt_long, color: Color(0xFF38BDF8)),
+                label: L10n.tabPayslip.get(sub),
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.calendar_month_outlined, color: Color(0xFF94A3B8)),
+                selectedIcon: const Icon(Icons.calendar_month, color: Color(0xFF38BDF8)),
+                label: L10n.tabSchedule.get(sub),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   // ===========================================================================
-  // TAB 1: PAYSLIP (With Pay Date Protection)
+  // TAB 1: PAYSLIP (With Pay Date Protection & Bilingual display)
   // ===========================================================================
-  Widget _buildPayslipTab(bool isMobile) {
+  Widget _buildPayslipTab(bool isMobile, SubLanguage sub) {
     final currency = NumberFormat('#,##0.00', 'en_US');
     final df = DateFormat('dd/MM/yyyy');
 
@@ -318,17 +334,16 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.person_off_outlined, size: 56, color: Color(0xFF64748B)),
-              const SizedBox(height: 16),
+              const Icon(Icons.inbox_outlined, size: 48, color: Color(0xFF64748B)),
+              const SizedBox(height: 12),
               Text(
-                'ไม่มีข้อมูลการทำงานในงวด $_selectedPeriod',
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                '${L10n.payslipTitle.get(sub)} - $_selectedPeriod',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'คุณอาจยังไม่เริ่มงานหรือพ้นสภาพการทำงานก่อนเริ่มรอบงวดนี้',
-                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                textAlign: TextAlign.center,
+              const SizedBox(height: 6),
+              Text(
+                L10n.noDeductions.get(sub),
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
               ),
             ],
           ),
@@ -339,13 +354,13 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
     final rec = _currentRecord!;
     final payDateArrived = _isPayDateArrived(rec);
 
-    // If pay date has NOT arrived yet, protect payslip from early exposure
+    // Pay date NOT yet arrived: Show friendly lock card
     if (!payDateArrived) {
       return Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
+            constraints: const BoxConstraints(maxWidth: 480),
             child: Card(
               color: const Color(0xFF1E293B),
               elevation: 4,
@@ -368,13 +383,13 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'สลิปเงินเดือนงวด ${rec.period}',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                      '${L10n.payslipTitle.get(sub)}: ${rec.period}',
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'รอบการทำงาน: ${df.format(rec.cycleStartDate)} - ${df.format(rec.cycleEndDate)}',
-                      style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                      '${L10n.workCycle.get(sub)}: ${df.format(rec.cycleStartDate)} - ${df.format(rec.cycleEndDate)}',
+                      style: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
                     ),
                     const SizedBox(height: 20),
                     Container(
@@ -391,7 +406,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                             children: [
                               const Icon(Icons.event_available, size: 18, color: Color(0xFF38BDF8)),
                               const SizedBox(width: 8),
-                              const Text('กำหนดจ่ายรอบเงินเดือน:', style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 13)),
+                              Text('${L10n.payDate.get(sub)}:', style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 13)),
                               const SizedBox(width: 6),
                               Text(
                                 df.format(rec.payDate),
@@ -400,10 +415,10 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          const Text(
-                            '🔒 ยอดเงินเดือนอยู่ระหว่างการคำนวณและปรับปรุงรอบงวด\nระบบจะเปิดให้ตรวจสอบสลิปเงินเดือนได้เมื่อถึงกำหนดวันจ่ายเงินเดือนครับ',
+                          Text(
+                            L10n.pendingPayDateDesc.sub(sub),
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5, height: 1.5),
+                            style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5, height: 1.5),
                           ),
                         ],
                       ),
@@ -412,7 +427,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                     OutlinedButton.icon(
                       onPressed: () => setState(() => _currentTab = 1),
                       icon: const Icon(Icons.calendar_month, size: 16),
-                      label: const Text('ดูตารางวันหยุด & วันทำงานที่บันทึกไว้'),
+                      label: Text(L10n.viewScheduleBtn.get(sub), style: const TextStyle(fontSize: 12.5)),
                       style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF38BDF8)),
                     ),
                   ],
@@ -424,7 +439,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
       );
     }
 
-    // Pay date HAS arrived: Display full payslip with download button
+    // Pay date HAS arrived: Display full bilingual payslip with download button
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 16),
       child: Center(
@@ -437,7 +452,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: const Color(0xFF10B981).withOpacity(0.2),
                       borderRadius: BorderRadius.circular(6),
@@ -449,18 +464,18 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                         const Icon(Icons.check_circle, size: 14, color: Color(0xFF10B981)),
                         const SizedBox(width: 6),
                         Text(
-                          'ชำระแล้วเมื่อ ${df.format(rec.payDate)}',
+                          '${L10n.paidOn.get(sub)}: ${df.format(rec.payDate)}',
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
                         ),
                       ],
                     ),
                   ),
                   ElevatedButton.icon(
-                    onPressed: _isExporting ? null : _downloadPayslipImage,
+                    onPressed: _isExporting ? null : () => _downloadPayslipImage(sub),
                     icon: _isExporting
                         ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                         : const Icon(Icons.download, size: 16),
-                    label: const Text('บันทึกรูปสลิป', style: TextStyle(fontSize: 12)),
+                    label: Text(L10n.saveSlipImageBtn.get(sub), style: const TextStyle(fontSize: 12)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0284C7),
                       foregroundColor: Colors.white,
@@ -503,7 +518,10 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Text('SIGNATURE RESORT & SPA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A))),
-                                Text('PAYSLIP / ใบแจ้งเงินเดือน (${rec.period})', style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                Text(
+                                  'PAYSLIP (${rec.period}) - ${L10n.payslipTitle.sub(sub)}',
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                                ),
                               ],
                             ),
                           ),
@@ -521,13 +539,13 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                         ),
                         child: Column(
                           children: [
-                            _buildInfoRow('รหัสพนักงาน (Code):', '${rec.epCode} - ${rec.nickname}'),
+                            _buildInfoRow('${L10n.fieldCode.get(sub)}:', '${rec.epCode} - ${rec.nickname}'),
                             const SizedBox(height: 4),
-                            _buildInfoRow('กลุ่มการจ่าย (Pay Group):', rec.payGroup),
+                            _buildInfoRow('${L10n.fieldPayGroup.get(sub)}:', rec.payGroup),
                             const SizedBox(height: 4),
-                            _buildInfoRow('รอบการทำงาน (Cycle):', '${df.format(rec.cycleStartDate)} - ${df.format(rec.cycleEndDate)}'),
+                            _buildInfoRow('${L10n.workCycle.get(sub)}:', '${df.format(rec.cycleStartDate)} - ${df.format(rec.cycleEndDate)}'),
                             const SizedBox(height: 4),
-                            _buildInfoRow('วันที่จ่าย (Pay Date):', df.format(rec.payDate)),
+                            _buildInfoRow('${L10n.payDate.get(sub)}:', df.format(rec.payDate)),
                           ],
                         ),
                       ),
@@ -536,49 +554,76 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                       // Attendance Badges
                       Row(
                         children: [
-                          Expanded(child: _buildBadgeCard('วันทำงาน', '${rec.workDays} วัน', const Color(0xFFE0F2FE), const Color(0xFF0369A1))),
+                          Expanded(
+                            child: _buildBadgeCard(
+                              L10n.badgeWorkedDays.get(sub),
+                              '${rec.workDays} ${L10n.unitDays.sub(sub)}',
+                              const Color(0xFFE0F2FE),
+                              const Color(0xFF0369A1),
+                            ),
+                          ),
                           const SizedBox(width: 8),
-                          Expanded(child: _buildBadgeCard('วันหยุด', '${rec.dayOff} วัน', const Color(0xFFF1F5F9), const Color(0xFF475569))),
+                          Expanded(
+                            child: _buildBadgeCard(
+                              L10n.badgeDayOff.get(sub),
+                              '${rec.dayOff} ${L10n.unitDays.sub(sub)}',
+                              const Color(0xFFF1F5F9),
+                              const Color(0xFF475569),
+                            ),
+                          ),
                           const SizedBox(width: 8),
-                          Expanded(child: _buildBadgeCard('ลาป่วย', '${rec.sickLeave} วัน', const Color(0xFFFEF3C7), const Color(0xFFB45309))),
+                          Expanded(
+                            child: _buildBadgeCard(
+                              L10n.badgeSickLeave.get(sub),
+                              '${rec.sickLeave} ${L10n.unitDays.sub(sub)}',
+                              const Color(0xFFFEF3C7),
+                              const Color(0xFFB45309),
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
 
                       // Earnings Section
-                      const Text('รายได้ (EARNINGS)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF16A34A))),
+                      Text(
+                        L10n.sectionEarnings.get(sub),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF16A34A)),
+                      ),
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(8)),
                         child: Column(
                           children: [
-                            _buildAmountRow('เงินเดือน / ค่าจ้างฐาน', rec.basePay, currency),
+                            _buildAmountRow(L10n.baseSalary.get(sub), rec.basePay, currency),
                             if (rec.housingAllowance > 0) ...[
                               const SizedBox(height: 4),
-                              _buildAmountRow('ค่าห้องพัก (Housing)', rec.housingAllowance, currency),
+                              _buildAmountRow(L10n.housingAllowance.get(sub), rec.housingAllowance, currency),
                             ],
                             if (rec.overtimePay > 0) ...[
                               const SizedBox(height: 4),
-                              _buildAmountRow('ค่าล่วงเวลา (OT)', rec.overtimePay, currency),
+                              _buildAmountRow(L10n.overtimePay.get(sub), rec.overtimePay, currency),
                             ],
                             if (rec.bonusPay > 0) ...[
                               const SizedBox(height: 4),
-                              _buildAmountRow('โบนัส / เบี้ยขยัน', rec.bonusPay, currency),
+                              _buildAmountRow(L10n.bonusPay.get(sub), rec.bonusPay, currency),
                             ],
                             if (rec.otherExtra > 0) ...[
                               const SizedBox(height: 4),
-                              _buildAmountRow('รายรับอื่นๆ', rec.otherExtra, currency),
+                              _buildAmountRow(L10n.otherExtra.get(sub), rec.otherExtra, currency),
                             ],
                             const Divider(height: 12),
-                            _buildAmountRow('รวมรายรับทั้งสิ้น', rec.basePay + rec.totalExtra, currency, isBold: true),
+                            _buildAmountRow(L10n.totalEarnings.get(sub), rec.basePay + rec.totalExtra, currency, isBold: true),
                           ],
                         ),
                       ),
                       const SizedBox(height: 14),
 
                       // Deductions Section
-                      const Text('รายการหัก (DEDUCTIONS)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFDC2626))),
+                      Text(
+                        L10n.sectionDeductions.get(sub),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFDC2626)),
+                      ),
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.all(10),
@@ -586,28 +631,33 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                         child: Column(
                           children: [
                             if (rec.advanceDeduction > 0) ...[
-                              _buildAmountRow('หักเงินเบิกล่วงหน้า (Advance)', rec.advanceDeduction, currency, isDeduct: true),
+                              _buildAmountRow(L10n.advanceDeduction.get(sub), rec.advanceDeduction, currency, isDeduct: true),
                               const SizedBox(height: 4),
                             ],
                             if (rec.workPermitDeduction > 0) ...[
-                              _buildAmountRow('หักค่าเอกสาร/พาสปอร์ต', rec.workPermitDeduction, currency, isDeduct: true),
+                              _buildAmountRow(L10n.workPermitDeduction.get(sub), rec.workPermitDeduction, currency, isDeduct: true),
                               const SizedBox(height: 4),
                             ],
                             if (rec.excessDayOffDeduction > 0) ...[
-                              _buildAmountRow('หักหยุดเกินโควตา (${rec.excessDayOffDays} วัน)', rec.excessDayOffDeduction, currency, isDeduct: true),
+                              _buildAmountRow(
+                                '${L10n.excessDayOffDeduction.get(sub)} (${rec.excessDayOffDays} ${L10n.unitDays.sub(sub)})',
+                                rec.excessDayOffDeduction,
+                                currency,
+                                isDeduct: true,
+                              ),
                               const SizedBox(height: 4),
                             ],
                             if (rec.otherDeduction > 0) ...[
-                              _buildAmountRow('หักรายการอื่นๆ', rec.otherDeduction, currency, isDeduct: true),
+                              _buildAmountRow(L10n.otherDeduction.get(sub), rec.otherDeduction, currency, isDeduct: true),
                               const SizedBox(height: 4),
                             ],
                             if (rec.totalDeduction == 0)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 4),
-                                child: Text('ไม่มีรายการหักเงินในงวดนี้', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Text(L10n.noDeductions.get(sub), style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                               ),
                             const Divider(height: 12),
-                            _buildAmountRow('รวมรายการหักทั้งสิ้น', rec.totalDeduction, currency, isDeduct: true, isBold: true),
+                            _buildAmountRow(L10n.totalDeductions.get(sub), rec.totalDeduction, currency, isDeduct: true, isBold: true),
                           ],
                         ),
                       ),
@@ -623,11 +673,17 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Column(
+                            Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('ยอดรับสุทธิ', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
-                                Text('NET SALARY (THB)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                                Text(
+                                  L10n.netSalary.sub(sub),
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+                                ),
+                                const Text(
+                                  'NET SALARY (THB)',
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                                ),
                               ],
                             ),
                             Text(
@@ -651,9 +707,8 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
   // ===========================================================================
   // TAB 2: ATTENDANCE & PLANNER (Strictly Read-Only)
   // ===========================================================================
-  Widget _buildScheduleTab(bool isMobile) {
+  Widget _buildScheduleTab(bool isMobile, SubLanguage sub) {
     final df = DateFormat('dd/MM/yyyy');
-    final dayNames = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
 
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 16),
@@ -676,15 +731,17 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                         children: [
                           const Icon(Icons.event_note, color: Color(0xFF38BDF8), size: 20),
                           const SizedBox(width: 8),
-                          Text(
-                            'บันทึกวันหยุดและเวลาทำงาน (${widget.employee.nickname})',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                          Expanded(
+                            child: Text(
+                              '${L10n.scheduleHeaderTitle.get(sub)} (${widget.employee.nickname})',
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'งวดเดือน: $_selectedPeriod  •  ดูได้อย่างเดียว (Read-Only)',
+                        '${L10n.periodLabel.get(sub)}: $_selectedPeriod  •  ${L10n.readOnlyNotice.get(sub)}',
                         style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                       ),
                     ],
@@ -698,15 +755,30 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: _buildScheduleStatCard('วันทำงานทั้งหมด', '${_currentRecord!.workDays}', 'วัน', const Color(0xFF0284C7)),
+                      child: _buildScheduleStatCard(
+                        L10n.badgeWorkedDays.get(sub),
+                        '${_currentRecord!.workDays}',
+                        L10n.unitDays.sub(sub),
+                        const Color(0xFF0284C7),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildScheduleStatCard('วันหยุดที่จัดไว้', '${_currentRecord!.dayOff}', 'วัน', const Color(0xFF64748B)),
+                      child: _buildScheduleStatCard(
+                        L10n.badgeDayOff.get(sub),
+                        '${_currentRecord!.dayOff}',
+                        L10n.unitDays.sub(sub),
+                        const Color(0xFF64748B),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: _buildScheduleStatCard('ลาป่วย', '${_currentRecord!.sickLeave}', 'วัน', const Color(0xFFD97706)),
+                      child: _buildScheduleStatCard(
+                        L10n.badgeSickLeave.get(sub),
+                        '${_currentRecord!.sickLeave}',
+                        L10n.unitDays.sub(sub),
+                        const Color(0xFFD97706),
+                      ),
                     ),
                   ],
                 ),
@@ -721,20 +793,23 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'ประวัติวันหยุดและวันลาในงวดนี้',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                      Text(
+                        L10n.scheduleHistoryTitle.get(sub),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       const SizedBox(height: 10),
                       if (_employeeAttendance.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
                           child: Center(
                             child: Column(
                               children: [
-                                Icon(Icons.event_busy, size: 36, color: Color(0xFF64748B)),
-                                SizedBox(height: 8),
-                                Text('ยังไม่มีรายการวันหยุดที่ถูกบันทึกในงวดนี้', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13)),
+                                const Icon(Icons.event_busy, size: 36, color: Color(0xFF64748B)),
+                                const SizedBox(height: 8),
+                                Text(
+                                  L10n.noAttendanceInPeriod.get(sub),
+                                  style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                                ),
                               ],
                             ),
                           ),
@@ -749,22 +824,29 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                             final log = _employeeAttendance[idx];
                             final dStr = log['date']?.toString() ?? '';
                             final cat = log['category']?.toString() ?? '';
-                            final shift = log['shift']?.toString() ?? 'Normal';
                             final note = log['note']?.toString() ?? '';
 
                             DateTime? dt;
                             String formattedDate = dStr;
-                            String thaiDayName = '';
+                            String dayName = '';
                             try {
                               dt = DateTime.parse(dStr);
                               formattedDate = df.format(dt);
-                              thaiDayName = dayNames[dt.weekday - 1];
+                              dayName = L10n.getDayName(dt.weekday, sub);
                             } catch (_) {}
 
                             Color badgeColor = const Color(0xFF64748B);
-                            if (cat == 'Day-off') badgeColor = const Color(0xFF38BDF8);
-                            if (cat == 'Sick') badgeColor = const Color(0xFFF59E0B);
-                            if (cat == 'Work Days') badgeColor = const Color(0xFF10B981);
+                            String catLabel = cat;
+                            if (cat == 'Day-off') {
+                              badgeColor = const Color(0xFF38BDF8);
+                              catLabel = L10n.statusDayOff.get(sub);
+                            } else if (cat == 'Sick') {
+                              badgeColor = const Color(0xFFF59E0B);
+                              catLabel = L10n.statusSick.get(sub);
+                            } else if (cat == 'Work Days' || cat == 'Work') {
+                              badgeColor = const Color(0xFF10B981);
+                              catLabel = L10n.statusWork.get(sub);
+                            }
 
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -781,7 +863,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          '$formattedDate ($thaiDayName)',
+                                          '$formattedDate ($dayName)',
                                           style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                                         ),
                                         if (note.isNotEmpty)
@@ -797,7 +879,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                                       border: Border.all(color: badgeColor.withOpacity(0.5)),
                                     ),
                                     child: Text(
-                                      cat,
+                                      catLabel,
                                       style: TextStyle(color: badgeColor, fontSize: 11.5, fontWeight: FontWeight.bold),
                                     ),
                                   ),
@@ -857,9 +939,9 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
       child: Column(
         children: [
-          Text(label, style: TextStyle(fontSize: 10.5, color: text, fontWeight: FontWeight.w500)),
+          Text(label, textAlign: TextAlign.center, style: TextStyle(fontSize: 10.5, color: text, fontWeight: FontWeight.w500)),
           const SizedBox(height: 2),
-          Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: text)),
+          Text(value, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: text)),
         ],
       ),
     );
@@ -873,14 +955,14 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Column(
           children: [
-            Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+            Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8))),
             const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+                Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: color)),
                 const SizedBox(width: 4),
                 Text(unit, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
               ],

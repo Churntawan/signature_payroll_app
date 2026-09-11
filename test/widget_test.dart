@@ -17,12 +17,11 @@ void main() {
 
     // Login screen shows brand and login button
     expect(find.text('SIGNATURE'), findsWidgets);
-    expect(find.text('PAYROLL SUITE'), findsWidgets);
-    expect(find.text('เข้าสู่ระบบจัดการ (Admin)'), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsOneWidget);
 
     // Enter admin password
     await tester.enterText(find.byType(TextField).first, 'Churn2543');
-    await tester.tap(find.text('เข้าสู่ระบบจัดการ (Admin)'));
+    await tester.tap(find.byType(ElevatedButton));
     await tester.pumpAndSettle();
 
     // After login, admin dashboard appears

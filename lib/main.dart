@@ -11,7 +11,9 @@ import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/image_saver.dart';
 import 'services/payroll_engine.dart';
+import 'services/localization_service.dart';
 import 'widgets/employee_portal_screen.dart';
+import 'widgets/language_toggle.dart';
 import 'widgets/login_screen.dart';
 import 'widgets/two_month_calendar_planner.dart';
 
@@ -495,57 +497,30 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 ],
               ),
         actions: [
-          // Current Date Badge
-          Container(
-            margin: EdgeInsets.symmetric(vertical: isMobile ? 10 : 8),
-            padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF334155)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.today_outlined, size: 14, color: Color(0xFF38BDF8)),
-                const SizedBox(width: 5),
-                if (!isMobile)
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'TODAY',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF94A3B8),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      Text(
-                        DateFormat('EEE, d MMM yyyy').format(DateTime.now()),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  )
-                else
+          // Current Date Badge (Shown when screen has ample room)
+          if (screenWidth >= 880) ...[
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF334155)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.today_outlined, size: 14, color: Color(0xFF38BDF8)),
+                  const SizedBox(width: 5),
                   Text(
-                    DateFormat('d MMM').format(DateTime.now()),
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                    DateFormat('d MMM yyyy').format(DateTime.now()),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
                   ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 6),
+            const SizedBox(width: 6),
+          ],
 
           // Period Selector Dropdown
           Container(
@@ -579,6 +554,11 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 },
               ),
             ),
+          ),
+          // Language Switcher
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+            child: LanguageToggle(isCompact: true),
           ),
           // Instant Cloud Refresh Button
           IconButton(
