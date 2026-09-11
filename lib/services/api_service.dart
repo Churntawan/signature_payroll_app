@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import '../models/employee.dart';
 import '../models/payroll_record.dart';
+import '../models/salary_record.dart';
 
 class ApiService {
   // Supabase Cloud REST API Endpoint
@@ -426,6 +427,51 @@ class ApiService {
         Uri.parse(query),
         headers: _headers,
       ).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 17. Fetch Salary History from Supabase Cloud
+  static Future<List<SalaryRecord>?> fetchSalaryHistory({String? epCode}) async {
+    try {
+      String query = '$supabaseUrl/salary_history?select=*&order=effective_period.desc';
+      if (epCode != null && epCode.isNotEmpty) {
+        query += '&ep_code=eq.$epCode';
+      }
+      final res = await http.get(Uri.parse(query), headers: _headers).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(res.body);
+        return list.map((e) => SalaryRecord.fromJson(Map<String, dynamic>.from(e))).toList();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // 18. Save Salary Record to Supabase Cloud
+  static Future<bool> saveSalaryRecord(SalaryRecord record) async {
+    try {
+      final upsertHeaders = Map<String, String>.from(_headers);
+      upsertHeaders['Prefer'] = 'resolution=merge-duplicates';
+      final res = await http.post(
+        Uri.parse('$supabaseUrl/salary_history?on_conflict=id'),
+        headers: upsertHeaders,
+        body: jsonEncode(record.toJson()),
+      ).timeout(const Duration(seconds: 5));
+      return res.statusCode >= 200 && res.statusCode < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 19. Delete Salary Record from Supabase Cloud
+  static Future<bool> deleteSalaryRecord(String id) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$supabaseUrl/salary_history?id=eq.$id'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 5));
       return res.statusCode == 200 || res.statusCode == 204;
     } catch (_) {
       return false;

@@ -11,6 +11,7 @@ import '../services/payroll_engine.dart';
 import '../services/localization_service.dart';
 import '../models/leave_request.dart';
 import '../services/leave_request_service.dart';
+import '../services/salary_history_service.dart';
 import 'language_toggle.dart';
 
 class EmployeePortalScreen extends StatefulWidget {
@@ -64,6 +65,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
       _selectedPeriod = '2026-09';
     }
 
+    SalaryHistoryService.initialize();
     _fetchEmployeeData();
   }
 

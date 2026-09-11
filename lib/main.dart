@@ -19,6 +19,8 @@ import 'widgets/employee_portal_screen.dart';
 import 'widgets/language_toggle.dart';
 import 'widgets/login_screen.dart';
 import 'widgets/two_month_calendar_planner.dart';
+import 'services/salary_history_service.dart';
+import 'widgets/salary_history_modal.dart';
 
 void main() {
   runApp(const SignaturePayrollApp());
@@ -87,6 +89,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   void initState() {
     super.initState();
     LeaveRequestService.initialize();
+    SalaryHistoryService.initialize();
+    SalaryHistoryService.syncFromCloud().ignore();
     _employees = List.from(initialEmployees);
     _currentSession = AuthService.loadSavedSession(_employees);
     _initializeData();
@@ -2299,6 +2303,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             itemBuilder: (context, idx) {
               final emp = _employees[idx];
               final df = DateFormat('dd/MM/yyyy');
+              final effectiveSalary = SalaryHistoryService.getSalaryForPeriod(
+                epCode: emp.epCode,
+                period: _selectedPeriod,
+                defaultSalary: emp.baseSalary,
+              );
+              final hasSalaryHistory = SalaryHistoryService.hasHistory(emp.epCode);
 
               return Card(
                 color: emp.isActive ? Colors.white : const Color(0xFFF8FAFC),
@@ -2342,9 +2352,36 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 2),
-                      Text(
-                        'Group: ${emp.payGroup}  |  Type: ${emp.wageType == 'Daily' ? 'รายวัน (Daily)' : 'รายเดือน (Monthly)'}  |  Salary: ฿${currency.format(emp.baseSalary)}',
-                        style: const TextStyle(fontSize: 12),
+                      Row(
+                        children: [
+                          Text(
+                            'Group: ${emp.payGroup}  |  Type: ${emp.wageType == 'Daily' ? 'รายวัน (Daily)' : 'รายเดือน (Monthly)'}  |  Salary: ฿${currency.format(effectiveSalary)}',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          if (hasSalaryHistory) ...[
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: () => _showSalaryHistoryDialog(emp),
+                              borderRadius: BorderRadius.circular(4),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFF10B981).withOpacity(0.35)),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.trending_up, size: 11, color: Color(0xFF10B981)),
+                                    SizedBox(width: 3),
+                                    Text('ประวัติปรับเงินเดือน', style: TextStyle(fontSize: 10, color: Color(0xFF10B981), fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       Text(
                         'Stay Outside: ${emp.stayOutside}${emp.stayOutside.toLowerCase() == 'yes' ? ' (ค่าห้อง: ฿${currency.format(emp.housingAllowance)}/ด.)' : ''}',
@@ -2380,7 +2417,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ),
                   trailing: PopupMenuButton<String>(
                     onSelected: (val) {
-                      if (val == 'toggle_status') {
+                      if (val == 'salary_history') {
+                        _showSalaryHistoryDialog(emp);
+                      } else if (val == 'toggle_status') {
                         _toggleEmployeeStatus(emp);
                       } else if (val == 'set_dates') {
                         _showSetDatesDialog(emp);
@@ -2391,6 +2430,16 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       }
                     },
                     itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'salary_history',
+                        child: const Row(
+                          children: [
+                            Icon(Icons.trending_up, size: 18, color: Color(0xFF10B981)),
+                            SizedBox(width: 8),
+                            Text('📈 ปรับฐานเงินเดือน & ประวัติ (Salary History)'),
+                          ],
+                        ),
+                      ),
                       PopupMenuItem(
                         value: 'set_pin',
                         child: const Row(
@@ -4622,6 +4671,20 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           },
         );
       },
+    );
+  }
+
+  void _showSalaryHistoryDialog(Employee emp) {
+    showDialog(
+      context: context,
+      builder: (ctx) => SalaryHistoryModal(
+        employee: emp,
+        currentPeriod: _selectedPeriod,
+        availablePeriods: _periods,
+        onUpdated: () async {
+          await _fetchDataAndRecalculate(reloadEmployees: true);
+        },
+      ),
     );
   }
 

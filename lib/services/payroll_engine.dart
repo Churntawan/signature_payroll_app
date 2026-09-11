@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 import '../models/employee.dart';
 import '../models/payroll_record.dart';
+import 'salary_history_service.dart';
 
 class CycleDateRange {
   final DateTime startDate;
@@ -100,12 +101,21 @@ class PayrollEngine {
       reasons.add('Resigned: ${dateFormat.format(effectiveEnd)}');
     }
 
-    // 4. Calculate working days and daily rate
+    // 4. Calculate working days and daily rate using period-effective salary
+    final effectiveSalary = SalaryHistoryService.getSalaryForPeriod(
+      epCode: employee.epCode,
+      period: period,
+      defaultSalary: employee.baseSalary,
+    );
     final isDaily = employee.isDailyWage;
-    final dailyRate = isDaily ? employee.dailyWageRate : (employee.baseSalary / 30.0);
+    final dailyRate = isDaily
+        ? (employee.note.contains('[DailyRate:')
+            ? employee.dailyWageRate
+            : (effectiveSalary >= 1000 ? (effectiveSalary / 30.0).roundToDouble() : effectiveSalary))
+        : (effectiveSalary / 30.0);
     final totalCycleDays = cycle.endDate.difference(cycle.startDate).inDays + 1;
     int workedDays = 30;
-    double basePay = employee.baseSalary;
+    double basePay = effectiveSalary;
 
     if (isDaily) {
       // Daily wage employee: initial default is total calendar days minus 4 standard day-offs
@@ -177,7 +187,7 @@ class PayrollEngine {
       cycleStartDate: cycle.startDate,
       cycleEndDate: cycle.endDate,
       payDate: cycle.payDate,
-      baseSalary: employee.baseSalary,
+      baseSalary: effectiveSalary,
       dailyRate: dailyRate,
       isProrate: isProrate,
       workedDays: workedDays,
