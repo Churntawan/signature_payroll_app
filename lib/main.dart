@@ -8,8 +8,11 @@ import 'data/initial_employees.dart';
 import 'models/employee.dart';
 import 'models/payroll_record.dart';
 import 'services/api_service.dart';
+import 'services/auth_service.dart';
 import 'services/image_saver.dart';
 import 'services/payroll_engine.dart';
+import 'widgets/employee_portal_screen.dart';
+import 'widgets/login_screen.dart';
 import 'widgets/two_month_calendar_planner.dart';
 
 void main() {
@@ -72,6 +75,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   String? _selectedPayslipEp;
   String _payslipGroupFilter = 'All Groups';
 
+  AuthSession? _currentSession;
+  bool _isCheckingAuth = true;
+
   @override
   void initState() {
     super.initState();
@@ -107,6 +113,15 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     if (_employees.isNotEmpty) {
       final active = _employees.where((e) => e.isActive).toList();
       _selectedPayslipEp = active.isNotEmpty ? active.first.epCode : _employees.first.epCode;
+    }
+
+    // 4. Load saved auth session
+    final saved = AuthService.loadSavedSession(_employees);
+    if (mounted) {
+      setState(() {
+        _currentSession = saved;
+        _isCheckingAuth = false;
+      });
     }
 
     await _fetchDataAndRecalculate();
@@ -355,6 +370,40 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isCheckingAuth) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF0B1120),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+        ),
+      );
+    }
+
+    if (_currentSession == null) {
+      return LoginScreen(
+        employees: _employees,
+        onLoginSuccess: (session) {
+          setState(() => _currentSession = session);
+        },
+      );
+    }
+
+    if (_currentSession!.isEmployee) {
+      final emp = _currentSession!.employee ??
+          _employees.firstWhere(
+            (e) => e.epCode == _currentSession!.epCode,
+            orElse: () => _employees.first,
+          );
+      return EmployeePortalScreen(
+        employee: emp,
+        periods: _periods,
+        onLogout: () {
+          AuthService.clearSession();
+          setState(() => _currentSession = null);
+        },
+      );
+    }
+
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 650;
 
@@ -553,6 +602,32 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       );
                     }
                   },
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout, size: 20, color: Color(0xFFF87171)),
+            tooltip: 'ออกจากระบบ (Admin Logout)',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: const Color(0xFF1E293B),
+                  title: const Text('ยืนยันออกจากระบบ', style: TextStyle(color: Colors.white)),
+                  content: const Text('คุณต้องการออกจากระบบผู้ดูแลใช่หรือไม่?', style: TextStyle(color: Color(0xFFCBD5E1))),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        AuthService.clearSession();
+                        setState(() => _currentSession = null);
+                      },
+                      child: const Text('ออกจากระบบ'),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
           const SizedBox(width: 4),
         ],
@@ -2209,6 +2284,20 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           '🚪 Resign Date: ${df.format(emp.resignDate!)}',
                           style: const TextStyle(fontSize: 11, color: Color(0xFFDC2626)),
                         ),
+                      Row(
+                        children: [
+                          Icon(Icons.key, size: 12, color: emp.hasCustomPin ? const Color(0xFF10B981) : const Color(0xFF64748B)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'PIN: ${emp.pin}${emp.hasCustomPin ? '' : ' (ค่าเริ่มต้น)'}',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: emp.hasCustomPin ? const Color(0xFF10B981) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
                       if (emp.note.isNotEmpty)
                         Text('📝 ${emp.note}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                     ],
@@ -2221,9 +2310,21 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         _showSetDatesDialog(emp);
                       } else if (val == 'edit_welfare') {
                         _showEditEmployeeWelfareDialog(emp);
+                      } else if (val == 'set_pin') {
+                        _showSetPinDialog(emp);
                       }
                     },
                     itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'set_pin',
+                        child: const Row(
+                          children: [
+                            Icon(Icons.pin_outlined, size: 18, color: Color(0xFF10B981)),
+                            SizedBox(width: 8),
+                            Text('ตั้งรหัส PIN พนักงาน (Portal)'),
+                          ],
+                        ),
+                      ),
                       PopupMenuItem(
                         value: 'edit_welfare',
                         child: const Row(
@@ -4765,4 +4866,81 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       }
     }
   }
+
+  void _showSetPinDialog(Employee emp) {
+    final pinCtrl = TextEditingController(text: emp.pin);
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text('ตั้งรหัส PIN: ${emp.nickname} (${emp.epCode})'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'กำหนดรหัส PIN 4-6 หลัก สำหรับพนักงานเข้าใช้งาน Employee Portal ดูสลิปเงินเดือนและตารางวันหยุดของตนเอง',
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: pinCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  labelText: 'รหัส PIN (ตัวเลข 4-6 หลัก)',
+                  hintText: 'เช่น 1234 หรือเลขท้าย 4 ตัว',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.pin),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                final newPin = pinCtrl.text.trim();
+                if (newPin.length < 4) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('กรุณากำหนดรหัส PIN อย่างน้อย 4 หลัก'), backgroundColor: Colors.orange),
+                  );
+                  return;
+                }
+
+                final updatedEmp = emp.copyWithPin(newPin);
+                final index = _employees.indexWhere((e) => e.epCode == emp.epCode);
+                if (index != -1) {
+                  setState(() => _employees[index] = updatedEmp);
+                }
+
+                final messenger = ScaffoldMessenger.of(context);
+                Navigator.pop(ctx);
+
+                final success = await ApiService.saveEmployee(updatedEmp);
+                if (mounted) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? '✅ ตั้งรหัส PIN ของ ${emp.nickname} เป็น $newPin เรียบร้อยแล้ว (บันทึกลง Cloud Database)!'
+                            : '⚠️ บันทึก PIN เฉพาะเครื่องนี้ (Local)',
+                      ),
+                      backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+                    ),
+                  );
+                }
+              },
+              child: const Text('บันทึก PIN'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
+

@@ -140,5 +140,30 @@ class Employee {
       note: withWelfareSettings(wageType: wageType, housingAllowance: housingAllowance, dailyRate: dailyRate),
     );
   }
+
+  /// Employee login PIN (parses [PIN:xxxx], defaults to 1234 if not configured)
+  String get pin {
+    final match = RegExp(r'\[PIN:([0-9a-zA-Z]+)\]').firstMatch(note);
+    if (match != null && match.group(1) != null && match.group(1)!.isNotEmpty) {
+      return match.group(1)!;
+    }
+    return '1234';
+  }
+
+  /// Check if custom PIN has been explicitly set in note
+  bool get hasCustomPin => RegExp(r'\[PIN:([0-9a-zA-Z]+)\]').hasMatch(note);
+
+  /// Create a new note string with updated PIN tag
+  String withPin(String newPin) {
+    var clean = note.replaceAll(RegExp(r'\[PIN:[0-9a-zA-Z]*\]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (newPin.trim().isEmpty) return clean;
+    final tag = '[PIN:${newPin.trim()}]';
+    return clean.isEmpty ? tag : '$clean $tag';
+  }
+
+  /// Return a new Employee instance with updated PIN
+  Employee copyWithPin(String newPin) {
+    return copyWith(note: withPin(newPin));
+  }
 }
 

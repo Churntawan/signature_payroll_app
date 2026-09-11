@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:signature_payroll_app/models/employee.dart';
+import 'package:signature_payroll_app/services/auth_service.dart';
 import 'package:signature_payroll_app/services/payroll_engine.dart';
 
 void main() {
@@ -489,6 +490,72 @@ void main() {
       // (June: 1,000 + July: 1,000 + Aug: 1,000 + Sep: 2,000 = 5,000 THB)
       final totalAdvanceRepaid = 1000.0 + 1000.0 + rec08.advanceDeduction + rec09.advanceDeduction;
       expect(totalAdvanceRepaid, 5000.0);
+    });
+
+    test('Authentication and PIN management tests', () {
+      // 1. Admin password verification
+      expect(AuthService.verifyAdmin('Churn2543'), true);
+      expect(AuthService.verifyAdmin(' Churn2543 '), true);
+      expect(AuthService.verifyAdmin('wrongpass'), false);
+      expect(AuthService.verifyAdmin(''), false);
+
+      // 2. Employee default PIN vs custom PIN
+      final empDefault = Employee(
+        epCode: 'EP01',
+        nickname: 'Chujai',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 10',
+      );
+      expect(empDefault.pin, '1234');
+      expect(empDefault.hasCustomPin, false);
+
+      final empWithCustomPin = empDefault.copyWithPin('9988');
+      expect(empWithCustomPin.pin, '9988');
+      expect(empWithCustomPin.hasCustomPin, true);
+      expect(empWithCustomPin.note.contains('[PIN:9988]'), true);
+
+      // 3. Employee login verification
+      final employees = [empDefault, empWithCustomPin];
+      expect(AuthService.verifyEmployee(employees: employees, epCode: 'EP01', pin: '1234'), isNotNull);
+      expect(AuthService.verifyEmployee(employees: employees, epCode: 'ep01', pin: '1234'), isNotNull);
+      expect(AuthService.verifyEmployee(employees: employees, epCode: 'EP01', pin: 'wrong'), isNull);
+    });
+
+    test('Pay date protection prevents early payslip access before payDate', () {
+      final empGroup1 = Employee(
+        epCode: 'EP39',
+        nickname: 'Cherry',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 1',
+      );
+      final empGroup20 = Employee(
+        epCode: 'EP22',
+        nickname: 'Meaw',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 20',
+      );
+
+      // Group 1 in period 2026-09 -> payDate is 2026-09-01
+      final cycle1 = PayrollEngine.getCycleRange('2026-09', empGroup1.payGroup);
+      expect(cycle1.payDate, DateTime(2026, 9, 1));
+
+      // Group 20 in period 2026-09 -> payDate is 2026-09-20
+      final cycle20 = PayrollEngine.getCycleRange('2026-09', empGroup20.payGroup);
+      expect(cycle20.payDate, DateTime(2026, 9, 20));
+
+      // Simulation date: 2026-09-11 (today)
+      final simulatedToday = DateTime(2026, 9, 11);
+
+      // For Group 1: simulatedToday (11/09) >= payDate (01/09) -> Arrived! Payslip can be viewed
+      final group1Arrived = simulatedToday.isAtSameMomentAs(cycle1.payDate) || simulatedToday.isAfter(cycle1.payDate);
+      expect(group1Arrived, true);
+
+      // For Group 20: simulatedToday (11/09) < payDate (20/09) -> NOT arrived! Payslip protected
+      final group20Arrived = simulatedToday.isAtSameMomentAs(cycle20.payDate) || simulatedToday.isAfter(cycle20.payDate);
+      expect(group20Arrived, false);
     });
   });
 }
