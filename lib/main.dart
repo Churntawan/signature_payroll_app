@@ -203,6 +203,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     }
     setState(() {
       _payrollRecords = newRecords;
+      if (_selectedPayslipEp == null || !newRecords.containsKey(_selectedPayslipEp)) {
+        if (newRecords.isNotEmpty) {
+          _selectedPayslipEp = newRecords.keys.first;
+        } else {
+          _selectedPayslipEp = null;
+        }
+      }
     });
   }
 
@@ -1461,16 +1468,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
 
-    // Filter only active employees for Payslip selection (exclude resigned staff)
-    final activeEpSet = _employees.where((e) => e.isActive).map((e) => e.epCode).toSet();
-    final activeRecords = _payrollRecords.values.where((r) => activeEpSet.contains(r.epCode)).toList();
+    // Available records for the selected period
+    // Includes all employees who have a payroll record in this period (even if resigned mid-cycle or in past cycles).
+    // Employees who resigned before this cycle are naturally excluded by PayrollEngine.
+    final availableRecords = _payrollRecords.values.toList();
 
     PayrollRecord? record;
-    if (_selectedPayslipEp != null && activeEpSet.contains(_selectedPayslipEp) && _payrollRecords.containsKey(_selectedPayslipEp)) {
+    if (_selectedPayslipEp != null && _payrollRecords.containsKey(_selectedPayslipEp)) {
       record = _payrollRecords[_selectedPayslipEp];
-    } else if (activeRecords.isNotEmpty) {
-      _selectedPayslipEp = activeRecords.first.epCode;
-      record = activeRecords.first;
+    } else if (availableRecords.isNotEmpty) {
+      _selectedPayslipEp = availableRecords.first.epCode;
+      record = availableRecords.first;
     } else {
       record = null;
     }
@@ -1497,14 +1505,23 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
                             isExpanded: true,
-                            value: (_selectedPayslipEp != null && activeEpSet.contains(_selectedPayslipEp)) ? _selectedPayslipEp : null,
+                            value: (_selectedPayslipEp != null && _payrollRecords.containsKey(_selectedPayslipEp)) ? _selectedPayslipEp : null,
                             hint: const Text('เลือกพนักงาน'),
-                            items: activeRecords.map((r) {
+                            items: availableRecords.map((r) {
+                              final emp = _employees.firstWhere(
+                                (e) => e.epCode == r.epCode,
+                                orElse: () => Employee(epCode: r.epCode, nickname: r.nickname, status: 'Active', baseSalary: r.baseSalary, payGroup: r.payGroup),
+                              );
+                              final isResigned = !emp.isActive || (emp.resignDate != null);
                               return DropdownMenuItem(
                                 value: r.epCode,
                                 child: Text(
-                                  '${r.epCode} - ${r.nickname} (${r.payGroup})',
+                                  '${r.epCode} - ${r.nickname} (${r.payGroup})${isResigned ? ' [พ้นสภาพ/ลาออก]' : ''}',
                                   overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: isResigned ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
+                                    fontWeight: isResigned ? FontWeight.w500 : FontWeight.normal,
+                                  ),
                                 ),
                               );
                             }).toList(),

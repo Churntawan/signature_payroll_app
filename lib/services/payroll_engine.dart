@@ -114,7 +114,18 @@ class PayrollEngine {
       if (workedDays < 0) workedDays = 0;
       basePay = (dailyRate * workedDays).roundToDouble();
     } else if (isProrate) {
-      workedDays = effectiveEnd.difference(effectiveStart).inDays + 1;
+      // Monthly employee prorate:
+      // Monthly base is 30 days.
+      // If employee works partial cycle, calculate actual calendar days worked and unworked days.
+      final calendarDaysWorked = effectiveEnd.difference(effectiveStart).inDays + 1;
+      final daysMissedInCycle = totalCycleDays - calendarDaysWorked;
+      if (calendarDaysWorked <= 15) {
+        // Worked short period / new hire late in cycle -> pay for actual days worked
+        workedDays = calendarDaysWorked;
+      } else {
+        // Employed for majority of cycle -> deduct unworked calendar days from 30-day base
+        workedDays = (30 - daysMissedInCycle).clamp(0, 30);
+      }
       if (workedDays < 0) workedDays = 0;
       basePay = (dailyRate * workedDays).roundToDouble();
     }
@@ -225,7 +236,8 @@ class PayrollEngine {
     if (rec.wageType == 'Daily' && explicitWorkDays > 0) {
       rec.workDays = explicitWorkDays;
     } else if (rec.wageType == 'Daily') {
-      rec.workDays = (totalCycleDays - rec.dayOff - rec.sickLeave).clamp(0, totalCycleDays);
+      final baseDays = rec.isProrate ? rec.workedDays : totalCycleDays;
+      rec.workDays = (baseDays - rec.dayOff - rec.sickLeave).clamp(0, totalCycleDays);
     } else if (rec.isProrate) {
       rec.workDays = (rec.workedDays - rec.dayOff - rec.sickLeave).clamp(0, totalCycleDays);
     } else {
