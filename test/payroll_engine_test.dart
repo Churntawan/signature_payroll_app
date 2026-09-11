@@ -359,11 +359,53 @@ void main() {
       expect(linePayslip.contains('12,200.00 THB'), true);
     });
 
-    test('Cherry resignation scenario in 2026-09 and exclusion in 2026-10', () {
-      final cherry = Employee(
+    test('Cherry resignation scenario in 2026-09 and exclusion in 2026-10 (Daily Wage)', () {
+      final cherryDaily = Employee(
         epCode: 'EP39',
         nickname: 'Cherry',
-        status: 'Active',
+        status: 'Resigned',
+        baseSalary: 12000,
+        payGroup: 'Date : 1',
+        stayOutside: 'Yes',
+        resignDate: DateTime(2026, 8, 31),
+        note: '[Wage:Daily] [DailyRate:400] [Housing:1000]',
+      );
+
+      // Period 2026-09 (Cycle: 02/08/2026 - 01/09/2026 = 31 days)
+      // Worked 30 calendar days (02/08 to 31/08), resigned on 31/08
+      final rec = PayrollEngine.calculateEmployeeRecord(employee: cherryDaily, period: '2026-09')!;
+      expect(rec.isProrate, true);
+      expect(rec.wageType, 'Daily');
+      expect(rec.workedDays, 30);
+      expect(rec.housingAllowance, 0.0); // Forfeited due to mid-cycle resignation
+
+      final att = [
+        {'date': '2026-08-09', 'category': 'Sick', 'units': 1.0},
+        {'date': '2026-08-14', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-16', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-21', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-28', 'category': 'Day-off', 'units': 1.0},
+      ];
+      PayrollEngine.applyAttendance(rec, att);
+      expect(rec.dayOff, 4);
+      expect(rec.sickLeave, 1);
+      // Actual work days: 30 calendar days - 4 day-offs - 1 sick leave = 25 days
+      expect(rec.workDays, 25);
+      expect(rec.basePay, 10000.0); // 25 days * 400 THB = 10,000 THB
+      expect(rec.excessDayOffDays, 0);
+      expect(rec.netPay, 10000.0);
+
+      // In subsequent cycle 2026-10 (Cycle: 02/09/2026 - 01/10/2026):
+      // Resign date 31/08/2026 is strictly before cycle start (02/09/2026) -> automatically excluded
+      final recNext = PayrollEngine.calculateEmployeeRecord(employee: cherryDaily, period: '2026-10');
+      expect(recNext, isNull);
+    });
+
+    test('Cherry resignation scenario in 2026-09 (Monthly Wage)', () {
+      final cherryMonthly = Employee(
+        epCode: 'EP39',
+        nickname: 'Cherry',
+        status: 'Resigned',
         baseSalary: 12000,
         payGroup: 'Date : 1',
         stayOutside: 'Yes',
@@ -373,11 +415,12 @@ void main() {
       // Period 2026-09 (Cycle: 02/08/2026 - 01/09/2026 = 31 days)
       // Resigned 31/08/2026 -> worked 30 calendar days, missed 1 day (01/09)
       // Monthly base is 30 days -> 30 - 1 = 29 worked days (@ 400 = 11,600 THB)
-      final rec = PayrollEngine.calculateEmployeeRecord(employee: cherry, period: '2026-09')!;
+      final rec = PayrollEngine.calculateEmployeeRecord(employee: cherryMonthly, period: '2026-09')!;
       expect(rec.isProrate, true);
+      expect(rec.wageType, 'Monthly');
       expect(rec.workedDays, 29);
       expect(rec.basePay, 11600.0);
-      expect(rec.housingAllowance, 0.0); // Forfeited due to mid-cycle resignation
+      expect(rec.housingAllowance, 0.0);
 
       final att = [
         {'date': '2026-08-09', 'category': 'Sick', 'units': 1.0},
@@ -390,16 +433,9 @@ void main() {
       expect(rec.workedDays, 29);
       expect(rec.dayOff, 4);
       expect(rec.sickLeave, 1);
-      // Actual work days: 29 worked days - 4 day-offs - 1 sick leave = 24 days
-      expect(rec.workDays, 24);
+      expect(rec.workDays, 24); // 29 - 4 - 1 = 24
       expect(rec.basePay, 11600.0);
-      expect(rec.excessDayOffDays, 0);
       expect(rec.netPay, 11600.0);
-
-      // In subsequent cycle 2026-10 (Cycle: 02/09/2026 - 01/10/2026):
-      // Resign date 31/08/2026 is strictly before cycle start (02/09/2026) -> automatically excluded
-      final recNext = PayrollEngine.calculateEmployeeRecord(employee: cherry, period: '2026-10');
-      expect(recNext, isNull);
     });
   });
 }

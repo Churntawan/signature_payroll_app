@@ -70,6 +70,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   List<Map<String, dynamic>> _adjustments = [];
 
   String? _selectedPayslipEp;
+  String _payslipGroupFilter = 'All Groups';
 
   @override
   void initState() {
@@ -1468,13 +1469,14 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 600;
 
-    // Available records for the selected period
-    // Includes all employees who have a payroll record in this period (even if resigned mid-cycle or in past cycles).
-    // Employees who resigned before this cycle are naturally excluded by PayrollEngine.
-    final availableRecords = _payrollRecords.values.toList();
+    // Available records for the selected period filtered by pay group
+    final availableRecords = _payrollRecords.values.where((r) {
+      if (_payslipGroupFilter == 'All Groups') return true;
+      return r.payGroup == _payslipGroupFilter;
+    }).toList();
 
     PayrollRecord? record;
-    if (_selectedPayslipEp != null && _payrollRecords.containsKey(_selectedPayslipEp)) {
+    if (_selectedPayslipEp != null && _payrollRecords.containsKey(_selectedPayslipEp) && availableRecords.any((r) => r.epCode == _selectedPayslipEp)) {
       record = _payrollRecords[_selectedPayslipEp];
     } else if (availableRecords.isNotEmpty) {
       _selectedPayslipEp = availableRecords.first.epCode;
@@ -1494,42 +1496,62 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 elevation: 1,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 8),
-                  child: Row(
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.badge_outlined, size: 20, color: Theme.of(context).primaryColor),
-                      const SizedBox(width: 8),
-                      Text(isMobile ? 'Staff: ' : 'Select Employee: ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            isExpanded: true,
-                            value: (_selectedPayslipEp != null && _payrollRecords.containsKey(_selectedPayslipEp)) ? _selectedPayslipEp : null,
-                            hint: const Text('เลือกพนักงาน'),
-                            items: availableRecords.map((r) {
-                              final emp = _employees.firstWhere(
-                                (e) => e.epCode == r.epCode,
-                                orElse: () => Employee(epCode: r.epCode, nickname: r.nickname, status: 'Active', baseSalary: r.baseSalary, payGroup: r.payGroup),
-                              );
-                              final isResigned = !emp.isActive || (emp.resignDate != null);
-                              return DropdownMenuItem(
-                                value: r.epCode,
-                                child: Text(
-                                  '${r.epCode} - ${r.nickname} (${r.payGroup})${isResigned ? ' [พ้นสภาพ/ลาออก]' : ''}',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: isResigned ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
-                                    fontWeight: isResigned ? FontWeight.w500 : FontWeight.normal,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) setState(() => _selectedPayslipEp = val);
-                            },
-                          ),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _buildPayslipGroupChip('All Groups'),
+                            const SizedBox(width: 6),
+                            _buildPayslipGroupChip('Date : 1'),
+                            const SizedBox(width: 6),
+                            _buildPayslipGroupChip('Date : 10'),
+                            const SizedBox(width: 6),
+                            _buildPayslipGroupChip('Date : 20'),
+                          ],
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.badge_outlined, size: 20, color: Theme.of(context).primaryColor),
+                          const SizedBox(width: 8),
+                          Text(isMobile ? 'Staff: ' : 'Select Employee: ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                isExpanded: true,
+                                value: (_selectedPayslipEp != null && availableRecords.any((r) => r.epCode == _selectedPayslipEp)) ? _selectedPayslipEp : null,
+                                hint: const Text('เลือกพนักงาน'),
+                                items: availableRecords.map((r) {
+                                  final emp = _employees.firstWhere(
+                                    (e) => e.epCode == r.epCode,
+                                    orElse: () => Employee(epCode: r.epCode, nickname: r.nickname, status: 'Active', baseSalary: r.baseSalary, payGroup: r.payGroup),
+                                  );
+                                  final isResigned = !emp.isActive || (emp.resignDate != null);
+                                  return DropdownMenuItem(
+                                    value: r.epCode,
+                                    child: Text(
+                                      '${r.epCode} - ${r.nickname} (${r.payGroup})${isResigned ? ' [พ้นสภาพ/ลาออก]' : ''}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isResigned ? const Color(0xFFDC2626) : const Color(0xFF0F172A),
+                                        fontWeight: isResigned ? FontWeight.w500 : FontWeight.normal,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) setState(() => _selectedPayslipEp = val);
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1954,6 +1976,35 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildPayslipGroupChip(String group) {
+    final isSelected = _payslipGroupFilter == group;
+    return ChoiceChip(
+      label: Text(
+        group,
+        style: TextStyle(
+          fontSize: 11.5,
+          color: isSelected ? Colors.white : const Color(0xFF334155),
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        ),
+      ),
+      selected: isSelected,
+      selectedColor: const Color(0xFF0284C7),
+      backgroundColor: const Color(0xFFF1F5F9),
+      side: BorderSide.none,
+      onSelected: (val) {
+        if (val) {
+          setState(() {
+            _payslipGroupFilter = group;
+            final recs = _payrollRecords.values.where((r) => group == 'All Groups' || r.payGroup == group).toList();
+            if (recs.isNotEmpty && !recs.any((r) => r.epCode == _selectedPayslipEp)) {
+              _selectedPayslipEp = recs.first.epCode;
+            }
+          });
+        }
+      },
     );
   }
 
