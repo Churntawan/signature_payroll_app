@@ -76,12 +76,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   String _payslipGroupFilter = 'All Groups';
 
   AuthSession? _currentSession;
-  bool _isCheckingAuth = true;
+  bool _isCheckingAuth = false;
 
   @override
   void initState() {
     super.initState();
     _employees = List.from(initialEmployees);
+    _currentSession = AuthService.loadSavedSession(_employees);
     _initializeData();
   }
 
@@ -115,13 +116,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       _selectedPayslipEp = active.isNotEmpty ? active.first.epCode : _employees.first.epCode;
     }
 
-    // 4. Load saved auth session
-    final saved = AuthService.loadSavedSession(_employees);
-    if (mounted) {
-      setState(() {
-        _currentSession = saved;
-        _isCheckingAuth = false;
-      });
+    // 4. Update session employee object if loaded from DB
+    if (_currentSession != null && _currentSession!.isEmployee) {
+      final updated = _employees.firstWhere(
+        (e) => e.epCode.toUpperCase() == _currentSession!.epCode?.toUpperCase(),
+        orElse: () => _currentSession!.employee ?? _employees.first,
+      );
+      if (mounted) {
+        setState(() {
+          _currentSession = AuthSession(role: UserRole.employee, epCode: updated.epCode, employee: updated);
+        });
+      }
     }
 
     await _fetchDataAndRecalculate();
