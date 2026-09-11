@@ -165,6 +165,21 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           }
         }
 
+        // Handle daily wage base pay and excess day-offs deduction
+        if (rec.wageType == 'Daily') {
+          rec.basePay = (rec.dailyRate * rec.workDays).roundToDouble();
+          rec.excessDayOffDays = 0;
+          rec.excessDayOffDeduction = 0.0;
+        } else {
+          if (rec.dayOff > 4) {
+            rec.excessDayOffDays = rec.dayOff - 4;
+            rec.excessDayOffDeduction = (rec.excessDayOffDays * rec.dailyRate).roundToDouble();
+          } else {
+            rec.excessDayOffDays = 0;
+            rec.excessDayOffDeduction = 0.0;
+          }
+        }
+
         // Aggregate real adjustments
         final empAdj = _adjustments.where((a) => a['ep_code'] == emp.epCode).toList();
         for (final a in empAdj) {
@@ -177,6 +192,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
               rec.overtimePay += amt;
             } else if (cat.contains('Bonus')) {
               rec.bonusPay += amt;
+            } else if (cat.contains('Housing') || cat.contains('ห้องพัก')) {
+              rec.housingAllowance = amt;
+              rec.housingAllowanceNote = 'ปรับปรุงยอดค่าห้องพักในงวด';
             } else {
               rec.otherExtra += amt;
             }
@@ -201,6 +219,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             rec.advanceDeduction = old.advanceDeduction;
             rec.workPermitDeduction = old.workPermitDeduction;
             rec.otherDeduction = old.otherDeduction;
+            rec.housingAllowance = old.housingAllowance;
           }
         }
 
@@ -953,6 +972,20 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                           style: const TextStyle(fontSize: 11, color: Color(0xFF0369A1)),
                                         ),
                                       ),
+                                      if (rec.wageType == 'Daily') ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFEF3C7),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'รายวัน (Daily)',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -994,6 +1027,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                         _buildMiniBadge('🩺 ${rec.sickLeave}d', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
                                       if (rec.otDays > 0)
                                         _buildMiniBadge('⚡ ${rec.otDays}d OT', const Color(0xFFFAF5FF), const Color(0xFF7C3AED)),
+                                      if (rec.housingAllowance > 0)
+                                        _buildMiniBadge('🏠 ฿${currency.format(rec.housingAllowance)}', const Color(0xFFECFDF5), const Color(0xFF059669)),
+                                      if (rec.excessDayOffDays > 0)
+                                        _buildMiniBadge('⚠️ หยุดเกิน ${rec.excessDayOffDays}d (-฿${currency.format(rec.excessDayOffDeduction)})', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
                                       if (rec.totalExtra > 0)
                                         _buildMiniBadge('+฿${currency.format(rec.totalExtra)}', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
                                       if (rec.totalDeduction > 0)
@@ -1002,7 +1039,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Base: ฿${currency.format(rec.basePay)}',
+                                    rec.wageType == 'Daily'
+                                        ? 'Daily: ฿${currency.format(rec.dailyRate)}/day × ${rec.workDays}d = ฿${currency.format(rec.basePay)}'
+                                        : 'Base: ฿${currency.format(rec.basePay)}',
                                     style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                                   ),
                                 ],
@@ -1929,9 +1968,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         ),
         const SizedBox(height: 8),
         _buildPayslipLine(
-          record.isProrate ? 'Prorated Base Pay' : 'Base Salary',
+          record.wageType == 'Daily'
+              ? 'Daily Wage (${record.workDays} days @ ฿${currency.format(record.dailyRate)})'
+              : (record.isProrate ? 'Prorated Base Pay' : 'Base Salary'),
           '฿${currency.format(record.basePay)}',
         ),
+        if (record.housingAllowance > 0)
+          _buildPayslipLine(
+            'Housing Allowance (ค่าห้องพัก)',
+            '+฿${currency.format(record.housingAllowance)}',
+            color: const Color(0xFF059669),
+          ),
         if (record.overtimePay > 0)
           _buildPayslipLine('Overtime (OT)', '+฿${currency.format(record.overtimePay)}'),
         if (record.bonusPay > 0)
@@ -1957,6 +2004,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444), fontSize: 13),
         ),
         const SizedBox(height: 8),
+        if (record.excessDayOffDeduction > 0)
+          _buildPayslipLine(
+            'Excess Day-offs (${record.excessDayOffDays}d @ ฿${currency.format(record.dailyRate)})',
+            '-฿${currency.format(record.excessDayOffDeduction)}',
+            color: const Color(0xFFDC2626),
+          ),
         _buildPayslipLine(
           'Advance Payment',
           record.advanceDeduction > 0 ? '-฿${currency.format(record.advanceDeduction)}' : '฿0.00',
@@ -2086,8 +2139,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     children: [
                       const SizedBox(height: 2),
                       Text(
-                        'Group: ${emp.payGroup}  |  Base Salary: ฿${currency.format(emp.baseSalary)}  |  Stay Outside: ${emp.stayOutside}',
+                        'Group: ${emp.payGroup}  |  Type: ${emp.wageType == 'Daily' ? 'รายวัน (Daily)' : 'รายเดือน (Monthly)'}  |  Salary: ฿${currency.format(emp.baseSalary)}',
                         style: const TextStyle(fontSize: 12),
+                      ),
+                      Text(
+                        'Stay Outside: ${emp.stayOutside}${emp.stayOutside.toLowerCase() == 'yes' ? ' (ค่าห้อง: ฿${currency.format(emp.housingAllowance)}/ด.)' : ''}',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF0369A1)),
                       ),
                       if (emp.startDate != null)
                         Text(
@@ -2109,9 +2166,21 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                         _toggleEmployeeStatus(emp);
                       } else if (val == 'set_dates') {
                         _showSetDatesDialog(emp);
+                      } else if (val == 'edit_welfare') {
+                        _showEditEmployeeWelfareDialog(emp);
                       }
                     },
                     itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'edit_welfare',
+                        child: const Row(
+                          children: [
+                            Icon(Icons.tune, size: 18, color: Color(0xFF0284C7)),
+                            SizedBox(width: 8),
+                            Text('ประเภทการจ้าง & สวัสดิการค่าห้องพัก'),
+                          ],
+                        ),
+                      ),
                       PopupMenuItem(
                         value: 'set_dates',
                         child: const Row(
@@ -3945,6 +4014,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
     final otCtrl = TextEditingController(text: record.overtimePay > 0 ? record.overtimePay.toString() : '');
     final bonusCtrl = TextEditingController(text: record.bonusPay > 0 ? record.bonusPay.toString() : '');
+    final housingCtrl = TextEditingController(text: record.housingAllowance > 0 ? record.housingAllowance.toString() : '');
     final otherExtraCtrl = TextEditingController(text: record.otherExtra > 0 ? record.otherExtra.toString() : '');
     final extraNoteCtrl = TextEditingController(text: record.extraNote);
 
@@ -4015,6 +4085,16 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ),
                   const Divider(height: 24),
                   const Text('➕ Earnings / Allowances (THB)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: housingCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Housing Allowance (ค่าห้องพัก ฿)',
+                      helperText: record.housingAllowanceNote.isNotEmpty ? record.housingAllowanceNote : null,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: otCtrl,
@@ -4093,6 +4173,25 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   record.halfDays = int.tryParse(halfCtrl.text) ?? record.halfDays;
                   record.otDays = int.tryParse(otDaysCtrl.text) ?? record.otDays;
 
+                  if (record.wageType == 'Daily') {
+                    record.basePay = (record.dailyRate * record.workDays).roundToDouble();
+                    record.excessDayOffDays = 0;
+                    record.excessDayOffDeduction = 0.0;
+                  } else {
+                    if (record.dayOff > 4) {
+                      record.excessDayOffDays = record.dayOff - 4;
+                      record.excessDayOffDeduction = (record.excessDayOffDays * record.dailyRate).roundToDouble();
+                    } else {
+                      record.excessDayOffDays = 0;
+                      record.excessDayOffDeduction = 0.0;
+                    }
+                  }
+
+                  record.housingAllowance = double.tryParse(housingCtrl.text) ?? 0;
+                  if (record.housingAllowance > 0 && record.housingAllowanceNote.isEmpty) {
+                    record.housingAllowanceNote = 'ปรับปรุงยอดค่าห้องพักในงวด';
+                  }
+
                   record.overtimePay = double.tryParse(otCtrl.text) ?? 0;
                   record.bonusPay = double.tryParse(bonusCtrl.text) ?? 0;
                   record.otherExtra = double.tryParse(otherExtraCtrl.text) ?? 0;
@@ -4134,7 +4233,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     final epCtrl = TextEditingController(text: 'EP${_employees.length + 1}');
     final nameCtrl = TextEditingController();
     final salaryCtrl = TextEditingController(text: '12000');
+    final housingCtrl = TextEditingController(text: '1000');
     String payGroup = 'Date : 10';
+    String wageType = 'Monthly';
+    String stayOutside = 'No';
     DateTime? startDate;
 
     showDialog(
@@ -4145,60 +4247,96 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
             return AlertDialog(
               title: const Text('Add New Employee'),
               content: SizedBox(
-                width: 400,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: epCtrl,
-                      decoration: const InputDecoration(labelText: 'Employee Code (EP Code)'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(labelText: 'Nickname'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: salaryCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Base Salary (THB)'),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: payGroup,
-                      decoration: const InputDecoration(labelText: 'Pay Group Cycle'),
-                      items: const [
-                        DropdownMenuItem(value: 'Date : 1', child: Text('Date : 1 (2nd prev - 1st current)')),
-                        DropdownMenuItem(value: 'Date : 10', child: Text('Date : 10 (11th prev - 10th current)')),
-                        DropdownMenuItem(value: 'Date : 20', child: Text('Date : 20 (21st prev - 20th current)')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) setDialogState(() => payGroup = val);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        startDate == null
-                            ? 'Set Start Date (For auto Smart Prorate)'
-                            : 'Start Date: ${DateFormat('dd/MM/yyyy').format(startDate!)}',
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: epCtrl,
+                        decoration: const InputDecoration(labelText: 'Employee Code (EP Code)'),
                       ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.calendar_month),
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now(),
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2030),
-                          );
-                          if (picked != null) setDialogState(() => startDate = picked);
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(labelText: 'Nickname'),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: wageType,
+                        decoration: const InputDecoration(labelText: 'Wage Type (ประเภทการจ้าง)'),
+                        items: const [
+                          DropdownMenuItem(value: 'Monthly', child: Text('รายเดือน (Monthly Salary)')),
+                          DropdownMenuItem(value: 'Daily', child: Text('รายวัน (Daily Wage)')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => wageType = val);
                         },
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: salaryCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: wageType == 'Daily' ? 'Daily Wage Rate (฿/วัน)' : 'Base Salary (฿/เดือน)',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: payGroup,
+                        decoration: const InputDecoration(labelText: 'Pay Group Cycle'),
+                        items: const [
+                          DropdownMenuItem(value: 'Date : 1', child: Text('Date : 1 (2nd prev - 1st current)')),
+                          DropdownMenuItem(value: 'Date : 10', child: Text('Date : 10 (11th prev - 10th current)')),
+                          DropdownMenuItem(value: 'Date : 20', child: Text('Date : 20 (21st prev - 20th current)')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => payGroup = val);
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: stayOutside,
+                        decoration: const InputDecoration(labelText: 'สวัสดิการค่าห้องพัก (Stay Outside)'),
+                        items: const [
+                          DropdownMenuItem(value: 'No', child: Text('No (ไม่ได้รับสิทธิ์)')),
+                          DropdownMenuItem(value: 'Yes', child: Text('Yes (ได้รับสวัสดิการค่าห้องพัก)')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => stayOutside = val);
+                        },
+                      ),
+                      if (stayOutside == 'Yes') ...[
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: housingCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'จำนวนเงินสวัสดิการค่าห้องพัก (฿/เดือน)'),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          startDate == null
+                              ? 'Set Start Date (For Smart Prorate & Housing Eligibility)'
+                              : 'Start Date: ${DateFormat('dd/MM/yyyy').format(startDate!)}',
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.calendar_month),
+                          onPressed: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2030),
+                            );
+                            if (picked != null) setDialogState(() => startDate = picked);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
@@ -4206,14 +4344,21 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                 ElevatedButton(
                   onPressed: () async {
                     if (nameCtrl.text.trim().isNotEmpty) {
-                      final newEmp = Employee(
+                      final rawEmp = Employee(
                         epCode: epCtrl.text.trim(),
                         nickname: nameCtrl.text.trim(),
                         status: 'Active',
                         baseSalary: double.tryParse(salaryCtrl.text) ?? 12000,
                         payGroup: payGroup,
+                        stayOutside: stayOutside,
                         startDate: startDate,
                       );
+                      final newEmp = rawEmp.copyWithWelfareSettings(
+                        wageType: wageType,
+                        stayOutside: stayOutside,
+                        housingAllowance: stayOutside == 'Yes' ? (double.tryParse(housingCtrl.text) ?? 1000.0) : 0.0,
+                      );
+
                       setState(() {
                         _employees.add(newEmp);
                       });
@@ -4359,6 +4504,149 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     }
                   },
                   child: const Text('Save Dates'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditEmployeeWelfareDialog(Employee emp) {
+    String wageType = emp.wageType;
+    String stayOutside = emp.stayOutside;
+    final housingCtrl = TextEditingController(
+      text: emp.housingAllowance > 0 ? emp.housingAllowance.toStringAsFixed(0) : '1000',
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('สวัสดิการ & การจ้าง: ${emp.nickname} (${emp.epCode})'),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: wageType,
+                        decoration: const InputDecoration(
+                          labelText: 'ประเภทการจ่ายค่าจ้าง (Wage Type)',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'Monthly', child: Text('รายเดือน (Monthly Salary)')),
+                          DropdownMenuItem(value: 'Daily', child: Text('รายวัน (Daily Wage)')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => wageType = val);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Text(
+                          wageType == 'Daily'
+                              ? 'ℹ️ พนักงานรายวัน: ฐานเงินเดือนจะคิดจาก (อัตราค่าจ้างรายวัน × วันทำงานจริง)'
+                              : 'ℹ️ พนักงานรายเดือน: ฐานเงินเดือนคิดตามปกติ โควตาวันหยุด 4 ครั้ง/งวด (หยุดเกินจะหักตามอัตราวัน)',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                        ),
+                      ),
+                      const Divider(height: 24),
+                      DropdownButtonFormField<String>(
+                        initialValue: stayOutside,
+                        decoration: const InputDecoration(
+                          labelText: 'สิทธิ์สวัสดิการค่าห้องพัก (Stay Outside)',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'No', child: Text('No (ไม่ได้รับสิทธิ์)')),
+                          DropdownMenuItem(value: 'Yes', child: Text('Yes (ได้รับสวัสดิการค่าห้องพัก)')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => stayOutside = val);
+                        },
+                      ),
+                      if (stayOutside.toLowerCase() == 'yes') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: housingCtrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'ยอดสวัสดิการค่าห้องพัก (฿/เดือน)',
+                            helperText: 'กำหนดเองได้ตามความเหมาะสม (ค่าเริ่มต้น 1,000 บาท)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFECFDF5),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFA7F3D0)),
+                          ),
+                          child: const Text(
+                            '📌 กฎการจ่าย: เริ่มได้รับในเดือนถัดไปหลังจากทำงานครบ 1 เดือน และหากลาออกระหว่างงวดจะไม่ได้รับสิทธิ์ในงวดนั้น',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF047857)),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    final allowance = stayOutside.toLowerCase() == 'yes'
+                        ? (double.tryParse(housingCtrl.text) ?? 1000.0)
+                        : 0.0;
+                    final updatedEmp = emp.copyWithWelfareSettings(
+                      wageType: wageType,
+                      stayOutside: stayOutside,
+                      housingAllowance: allowance,
+                    );
+
+                    final index = _employees.indexWhere((e) => e.epCode == emp.epCode);
+                    if (index != -1) {
+                      setState(() {
+                        _employees[index] = updatedEmp;
+                      });
+                    }
+
+                    final messenger = ScaffoldMessenger.of(context);
+                    Navigator.pop(ctx);
+
+                    final success = await ApiService.saveEmployee(updatedEmp);
+                    await _fetchDataAndRecalculate(reloadEmployees: true);
+
+                    if (mounted) {
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success
+                                ? '✅ บันทึกประเภทการจ้างและสวัสดิการของ ${emp.nickname} เรียบร้อยแล้ว!'
+                                : '⚠️ บันทึกข้อมูลเฉพาะเครื่องนี้ (Local)',
+                          ),
+                          backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('บันทึกการตั้งค่า'),
                 ),
               ],
             );

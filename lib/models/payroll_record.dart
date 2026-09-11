@@ -8,17 +8,22 @@ class PayrollRecord {
   final DateTime payDate;
   
   final double baseSalary;
-  final double dailyRate; // baseSalary / 30
+  final double dailyRate; // baseSalary / 30 (or daily rate for daily wage)
   final bool isProrate;
   final int workedDays;
   final String prorateReason; // e.g. 'เข้างานใหม่วันที่ 15/01/2025' or 'ลาออกวันที่ 05/01/2025'
+  final String wageType; // 'Monthly' or 'Daily'
   
-  final double basePay; // full baseSalary or prorated amount
+  double basePay; // full baseSalary or prorated amount or (dailyRate * workDays)
   double overtimePay;
   double bonusPay;
   double otherExtra;
   String extraNote;
   
+  // Housing Allowance
+  double housingAllowance;
+  String housingAllowanceNote;
+
   // Attendance & Leave details
   int workDays;
   int dayOff;
@@ -26,6 +31,10 @@ class PayrollRecord {
   int halfDays;
   int otDays;
   List<Map<String, dynamic>> attendanceDetails;
+
+  // Excess Day-offs deduction (over 4 days)
+  int excessDayOffDays;
+  double excessDayOffDeduction;
 
   double advanceDeduction;
   double workPermitDeduction;
@@ -47,17 +56,22 @@ class PayrollRecord {
     required this.isProrate,
     required this.workedDays,
     this.prorateReason = '',
+    this.wageType = 'Monthly',
     required this.basePay,
     this.overtimePay = 0,
     this.bonusPay = 0,
     this.otherExtra = 0,
     this.extraNote = '',
+    this.housingAllowance = 0,
+    this.housingAllowanceNote = '',
     this.workDays = 26,
     this.dayOff = 4,
     this.sickLeave = 0,
     this.halfDays = 0,
     this.otDays = 0,
     this.attendanceDetails = const [],
+    this.excessDayOffDays = 0,
+    this.excessDayOffDeduction = 0,
     this.advanceDeduction = 0,
     this.workPermitDeduction = 0,
     this.otherDeduction = 0,
@@ -65,8 +79,8 @@ class PayrollRecord {
     this.status = 'Approved',
   });
 
-  double get totalExtra => overtimePay + bonusPay + otherExtra;
-  double get totalDeduction => advanceDeduction + workPermitDeduction + otherDeduction;
+  double get totalExtra => overtimePay + bonusPay + otherExtra + housingAllowance;
+  double get totalDeduction => advanceDeduction + workPermitDeduction + otherDeduction + excessDayOffDeduction;
   double get netPay => (basePay + totalExtra - totalDeduction);
 
   // Helper getters for specific leave categories

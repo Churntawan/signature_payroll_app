@@ -100,15 +100,60 @@ class PayrollEngine {
       reasons.add('Resigned: ${dateFormat.format(effectiveEnd)}');
     }
 
-    // 4. Calculate working days and daily rate (Base Salary / 30)
-    final dailyRate = employee.baseSalary / 30.0;
+    // 4. Calculate working days and daily rate
+    final isDaily = employee.isDailyWage;
+    final dailyRate = isDaily ? employee.baseSalary : (employee.baseSalary / 30.0);
     int workedDays = 30;
     double basePay = employee.baseSalary;
 
-    if (isProrate) {
+    if (isDaily) {
+      // Daily wage employee: initial default 26 days or prorated days
+      workedDays = isProrate ? effectiveEnd.difference(effectiveStart).inDays + 1 : 26;
+      if (workedDays < 0) workedDays = 0;
+      basePay = (dailyRate * workedDays).roundToDouble();
+    } else if (isProrate) {
       workedDays = effectiveEnd.difference(effectiveStart).inDays + 1;
       if (workedDays < 0) workedDays = 0;
       basePay = (dailyRate * workedDays).roundToDouble();
+    }
+
+    // 5. Housing allowance calculation & qualification checks
+    double housingAllowance = 0.0;
+    String housingAllowanceNote = '';
+
+    if (employee.stayOutside.toLowerCase() == 'yes') {
+      final configuredAmount = employee.housingAllowance;
+
+      // Condition 1: Must have worked for at least 1 month before current cycle (starts the next month)
+      bool reachedOneMonth = true;
+      if (employee.startDate != null) {
+        final oneMonthAnniversary = DateTime(
+          employee.startDate!.year,
+          employee.startDate!.month + 1,
+          employee.startDate!.day,
+        );
+        // Eligible starting next month -> oneMonthAnniversary must be on or before current cycle start
+        if (oneMonthAnniversary.isAfter(cycle.startDate)) {
+          reachedOneMonth = false;
+        }
+      }
+
+      // Condition 2: Forfeited if resigned mid-cycle
+      bool resignedMidCycle = false;
+      if (employee.resignDate != null && employee.resignDate!.isBefore(cycle.endDate)) {
+        resignedMidCycle = true;
+      }
+
+      if (!reachedOneMonth) {
+        housingAllowance = 0.0;
+        housingAllowanceNote = 'ยังไม่ครบอายุงาน 1 เดือน (เริ่มได้งวดถัดไป)';
+      } else if (resignedMidCycle) {
+        housingAllowance = 0.0;
+        housingAllowanceNote = 'ถูกตัดสิทธิ์เนื่องจากลาออกระหว่างงวด';
+      } else {
+        housingAllowance = configuredAmount;
+        housingAllowanceNote = 'ได้รับสิทธิ์สวัสดิการค่าห้องพัก';
+      }
     }
 
     return PayrollRecord(
@@ -124,7 +169,10 @@ class PayrollEngine {
       isProrate: isProrate,
       workedDays: workedDays,
       prorateReason: reasons.join(' | '),
+      wageType: isDaily ? 'Daily' : 'Monthly',
       basePay: basePay,
+      housingAllowance: housingAllowance,
+      housingAllowanceNote: housingAllowanceNote,
       workDays: isProrate ? workedDays : 26,
       dayOff: 4,
       sickLeave: 0,
@@ -203,7 +251,9 @@ class PayrollEngine {
     }
     buffer.writeln('────────────────────');
 
-    if (record.isProrate) {
+    if (record.wageType == 'Daily') {
+      buffer.writeln('💵 Daily Wage (ค่าจ้างรายวัน): ฿${currency.format(record.dailyRate)} × ${record.workDays} วัน = ${currency.format(record.basePay)} THB');
+    } else if (record.isProrate) {
       buffer.writeln('⚠️ *Smart Prorate Calculation:*');
       buffer.writeln('   Details: ${record.prorateReason}');
       buffer.writeln('   Eligible Days: ${record.workedDays} days (@ ${currency.format(record.dailyRate)} / day)');
@@ -217,6 +267,7 @@ class PayrollEngine {
       buffer.writeln('➕ *Earnings / Allowances:*');
       if (record.overtimePay > 0) buffer.writeln('  • Overtime (OT): +${currency.format(record.overtimePay)}');
       if (record.bonusPay > 0) buffer.writeln('  • Bonus / Incentive: +${currency.format(record.bonusPay)}');
+      if (record.housingAllowance > 0) buffer.writeln('  • Housing Allowance (ค่าห้องพัก): +${currency.format(record.housingAllowance)}');
       if (record.otherExtra > 0) buffer.writeln('  • Other Extra: +${currency.format(record.otherExtra)}');
       if (record.extraNote.isNotEmpty) buffer.writeln('    (${record.extraNote})');
     }
@@ -224,6 +275,7 @@ class PayrollEngine {
     if (record.totalDeduction > 0) {
       buffer.writeln('────────────────────');
       buffer.writeln('➖ *Deductions:*');
+      if (record.excessDayOffDeduction > 0) buffer.writeln('  • Excess Day-off (หยุดเกินโควตา ${record.excessDayOffDays} วัน): -${currency.format(record.excessDayOffDeduction)}');
       if (record.advanceDeduction > 0) buffer.writeln('  • Advance Payment: -${currency.format(record.advanceDeduction)}');
       if (record.workPermitDeduction > 0) buffer.writeln('  • Work Permit / Passport: -${currency.format(record.workPermitDeduction)}');
       if (record.otherDeduction > 0) buffer.writeln('  • Other Deductions: -${currency.format(record.otherDeduction)}');

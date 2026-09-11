@@ -64,6 +64,20 @@ class Employee {
     return [];
   }
 
+  /// Check if employee is paid on daily wage basis
+  bool get isDailyWage => note.contains('[Wage:Daily]');
+  String get wageType => isDailyWage ? 'Daily' : 'Monthly';
+
+  /// Housing allowance amount (defaults to 1000.0 if stayOutside is Yes, unless custom tag is set)
+  double get housingAllowance {
+    if (stayOutside.toLowerCase() != 'yes') return 0.0;
+    final match = RegExp(r'\[Housing:([0-9.]+)\]').firstMatch(note);
+    if (match != null) {
+      return double.tryParse(match.group(1) ?? '') ?? 1000.0;
+    }
+    return 1000.0;
+  }
+
   /// Create a new note string with updated preferred day-offs tag
   String withPreferredDayOffs(List<int> days) {
     var clean = note.replaceAll(RegExp(r'\[DayOff:[0-9,]*\]'), '').trim();
@@ -77,4 +91,37 @@ class Employee {
   Employee copyWithPreferredDayOffs(List<int> days) {
     return copyWith(note: withPreferredDayOffs(days));
   }
+
+  /// Create a new note string with updated wage type and housing allowance tags
+  String withWelfareSettings({String? wageType, double? housingAllowance}) {
+    var clean = note
+        .replaceAll(RegExp(r'\[Wage:(Monthly|Daily)\]'), '')
+        .replaceAll(RegExp(r'\[Housing:[0-9.]+\]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+
+    final List<String> tags = [];
+    final finalWage = wageType ?? this.wageType;
+    if (finalWage == 'Daily') {
+      tags.add('[Wage:Daily]');
+    }
+
+    final finalHousing = housingAllowance ?? this.housingAllowance;
+    if (finalHousing > 0) {
+      tags.add('[Housing:${finalHousing.toStringAsFixed(0)}]');
+    }
+
+    if (tags.isEmpty) return clean;
+    final tagStr = tags.join(' ');
+    return clean.isEmpty ? tagStr : '$clean $tagStr';
+  }
+
+  /// Return a new Employee instance with updated welfare settings
+  Employee copyWithWelfareSettings({String? wageType, double? housingAllowance, String? stayOutside}) {
+    return copyWith(
+      stayOutside: stayOutside,
+      note: withWelfareSettings(wageType: wageType, housingAllowance: housingAllowance),
+    );
+  }
 }
+
