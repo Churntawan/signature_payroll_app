@@ -1006,10 +1006,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                         _buildMiniBadge('🏠 ฿${currency.format(rec.housingAllowance)}', const Color(0xFFECFDF5), const Color(0xFF059669)),
                                       if (rec.excessDayOffDays > 0)
                                         _buildMiniBadge('⚠️ หยุดเกิน ${rec.excessDayOffDays}d (-฿${currency.format(rec.excessDayOffDeduction)})', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
-                                      if (rec.totalExtra > 0)
-                                        _buildMiniBadge('+฿${currency.format(rec.totalExtra)}', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
-                                      if (rec.totalDeduction > 0)
-                                        _buildMiniBadge('-฿${currency.format(rec.totalDeduction)}', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
+                                      if ((rec.overtimePay + rec.bonusPay + rec.otherExtra) > 0)
+                                        _buildMiniBadge('+฿${currency.format(rec.overtimePay + rec.bonusPay + rec.otherExtra)}', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
+                                      if ((rec.advanceDeduction + rec.workPermitDeduction + rec.otherDeduction) > 0)
+                                        _buildMiniBadge('-฿${currency.format(rec.advanceDeduction + rec.workPermitDeduction + rec.otherDeduction)}', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
                                     ],
                                   ),
                                   const SizedBox(height: 2),
