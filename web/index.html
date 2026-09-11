@@ -37,27 +37,37 @@
 </head>
 <body>
   <script>
-    // Force unregister stale service workers and clear cache storage to ensure instant updates
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        for (let registration of registrations) {
-          registration.unregister();
+    async function initFlutterApp() {
+      // Force unregister stale service workers and clear cache storage to ensure instant updates
+      if ('serviceWorker' in navigator) {
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (let registration of registrations) {
+            await registration.unregister();
+          }
+        } catch (e) {
+          console.warn('SW unregister error:', e);
         }
-      });
-    }
-    if ('caches' in window) {
-      caches.keys().then(function(names) {
-        for (let name of names) {
-          caches.delete(name);
+      }
+      if ('caches' in window) {
+        try {
+          const names = await caches.keys();
+          for (let name of names) {
+            await caches.delete(name);
+          }
+        } catch (e) {
+          console.warn('Cache delete error:', e);
         }
-      });
+      }
+
+      // Dynamic cache-busting load for flutter_bootstrap.js
+      const script = document.createElement('script');
+      script.src = 'flutter_bootstrap.js?t=' + new Date().getTime();
+      script.async = true;
+      document.body.appendChild(script);
     }
 
-    // Dynamic cache-busting load for flutter_bootstrap.js
-    const script = document.createElement('script');
-    script.src = 'flutter_bootstrap.js?t=' + new Date().getTime();
-    script.async = true;
-    document.body.appendChild(script);
+    initFlutterApp();
   </script>
 </body>
 </html>
