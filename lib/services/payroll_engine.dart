@@ -103,12 +103,14 @@ class PayrollEngine {
     // 4. Calculate working days and daily rate
     final isDaily = employee.isDailyWage;
     final dailyRate = isDaily ? employee.dailyWageRate : (employee.baseSalary / 30.0);
+    final totalCycleDays = cycle.endDate.difference(cycle.startDate).inDays + 1;
     int workedDays = 30;
     double basePay = employee.baseSalary;
 
     if (isDaily) {
-      // Daily wage employee: initial default 26 days or prorated days
-      workedDays = isProrate ? effectiveEnd.difference(effectiveStart).inDays + 1 : 26;
+      // Daily wage employee: initial default is total calendar days minus 4 standard day-offs
+      final defaultDailyWorkDays = (totalCycleDays - 4).clamp(0, totalCycleDays);
+      workedDays = isProrate ? effectiveEnd.difference(effectiveStart).inDays + 1 : defaultDailyWorkDays;
       if (workedDays < 0) workedDays = 0;
       basePay = (dailyRate * workedDays).roundToDouble();
     } else if (isProrate) {
@@ -173,7 +175,7 @@ class PayrollEngine {
       basePay: basePay,
       housingAllowance: housingAllowance,
       housingAllowanceNote: housingAllowanceNote,
-      workDays: isProrate ? workedDays : 26,
+      workDays: isDaily ? workedDays : (isProrate ? workedDays : 26),
       dayOff: 4,
       sickLeave: 0,
       halfDays: 0,
@@ -213,14 +215,19 @@ class PayrollEngine {
       rec.dayOff = 0;
     }
 
+    final totalCycleDays = rec.cycleEndDate.difference(rec.cycleStartDate).inDays + 1;
+
     // Work Days calculation:
     // - Daily wage with explicit 'Work Days' logs: use explicit count
+    // - Daily wage without explicit logs: actual calendar days in cycle (28, 29, 30, 31) minus day-offs and sick leaves
     // - Prorated employee: workedDays minus day-offs and sick leaves
-    // - Standard employee: 30 days minus effective day-offs (min 4) and sick leaves
+    // - Standard monthly employee: 30 days minus effective day-offs (min 4) and sick leaves
     if (rec.wageType == 'Daily' && explicitWorkDays > 0) {
       rec.workDays = explicitWorkDays;
+    } else if (rec.wageType == 'Daily') {
+      rec.workDays = (totalCycleDays - rec.dayOff - rec.sickLeave).clamp(0, totalCycleDays);
     } else if (rec.isProrate) {
-      rec.workDays = (rec.workedDays - rec.dayOff - rec.sickLeave).clamp(0, 30);
+      rec.workDays = (rec.workedDays - rec.dayOff - rec.sickLeave).clamp(0, totalCycleDays);
     } else {
       rec.workDays = (30 - rec.dayOff - rec.sickLeave).clamp(0, 30);
     }

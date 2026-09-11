@@ -133,10 +133,20 @@ void main() {
       expect(record, isNotNull);
       expect(record!.wageType, 'Daily');
       expect(record.dailyRate, 450);
-      // Default worked days is 26 for full cycle
-      expect(record.workedDays, 26);
-      expect(record.basePay, 450 * 26); // 11,700
-      expect(record.netPay, 11700);
+      // Period 2025-01 (11/12 to 10/01) has 31 calendar days. Default worked days is 31 - 4 = 27
+      expect(record.workedDays, 27);
+      expect(record.basePay, 450 * 27); // 12,150
+      expect(record.netPay, 12150);
+
+      // Period in 30-day month (e.g. 2025-05: 11/04 to 10/05 has 30 days -> 30 - 4 = 26)
+      final rec30 = PayrollEngine.calculateEmployeeRecord(employee: emp, period: '2025-05')!;
+      expect(rec30.workedDays, 26);
+      expect(rec30.basePay, 450 * 26); // 11,700
+
+      // Period in February (2025-03: 11/02/2025 to 10/03/2025 has 28 days -> 28 - 4 = 24)
+      final rec28 = PayrollEngine.calculateEmployeeRecord(employee: emp, period: '2025-03')!;
+      expect(rec28.workedDays, 24);
+      expect(rec28.basePay, 450 * 24); // 10,800
 
       // Simulate 20 days worked
       record.workDays = 20;
@@ -161,7 +171,29 @@ void main() {
       final empCustomRate = empMonthlyToDaily.copyWithWelfareSettings(dailyRate: 450.0);
       expect(empCustomRate.dailyWageRate, 450.0);
 
-      // Wan exact scenario with attendance logs (2 sick days, 0 logged day-offs)
+      // User's exact scenario 1: 31 days worked in 31-day cycle -> 31 * 400 = 12,400 THB
+      final recWan31 = PayrollEngine.calculateEmployeeRecord(employee: empMonthlyToDaily, period: '2026-09')!;
+      final full31Logs = List.generate(31, (i) => {
+        'date': '2026-08-${(i + 11).toString().padLeft(2, '0')}',
+        'category': 'Work Days',
+        'units': 1.0,
+      });
+      PayrollEngine.applyAttendance(recWan31, full31Logs);
+      expect(recWan31.workDays, 31);
+      expect(recWan31.basePay, 31 * 400.0); // 12,400 THB
+
+      // User's exact scenario 2: 28 days worked in February cycle -> 28 * 400 = 11,200 THB
+      final recWan28 = PayrollEngine.calculateEmployeeRecord(employee: empMonthlyToDaily, period: '2026-03')!;
+      final full28Logs = List.generate(28, (i) => {
+        'date': '2026-02-${(i + 11).toString().padLeft(2, '0')}',
+        'category': 'Work Days',
+        'units': 1.0,
+      });
+      PayrollEngine.applyAttendance(recWan28, full28Logs);
+      expect(recWan28.workDays, 28);
+      expect(recWan28.basePay, 28 * 400.0); // 11,200 THB
+
+      // Wan scenario with attendance logs in 2026-09 (31-day cycle, 2 sick days, 4 day-offs)
       final empWanFull = Employee(
         epCode: 'EP09',
         nickname: 'Wan',
@@ -176,21 +208,19 @@ void main() {
       expect(recWanWithAtt.dailyRate, 400.0);
       expect(recWanWithAtt.housingAllowance, 1000.0);
 
-      // Apply attendance with 2 sick days (13/08, 26/08) and 0 day-off logs
+      // Apply attendance with 2 sick days (13/08, 26/08) and default 4 day-offs in 31-day cycle:
+      // 31 - 4 - 2 = 25 days worked
       final wanAttendance = [
         {'date': '2026-08-13', 'category': 'Sick', 'units': 1.0},
         {'date': '2026-08-26', 'category': 'Sick', 'units': 1.0},
       ];
       PayrollEngine.applyAttendance(recWanWithAtt, wanAttendance);
-
-      // Verification of Wan's exact business rules:
-      // Standard 30 days - 4 standard day-offs - 2 sick leaves = 24 work days
       expect(recWanWithAtt.dayOff, 4);
       expect(recWanWithAtt.sickLeave, 2);
-      expect(recWanWithAtt.workDays, 24);
-      expect(recWanWithAtt.basePay, 9600.0); // 24 days @ 400 THB = 9,600 THB
+      expect(recWanWithAtt.workDays, 25);
+      expect(recWanWithAtt.basePay, 25 * 400.0); // 10,000 THB
       expect(recWanWithAtt.housingAllowance, 1000.0);
-      expect(recWanWithAtt.netPay, 10600.0); // 9,600 + 1,000 = 10,600 THB
+      expect(recWanWithAtt.netPay, 11000.0); // 10,000 + 1,000 = 11,000 THB
 
       // Scenario: Daily worker with explicit 'Work Days' logged (e.g. 21 days)
       final recWanExplicit = PayrollEngine.calculateEmployeeRecord(employee: empWanFull, period: '2026-09')!;
