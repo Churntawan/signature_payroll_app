@@ -4039,7 +4039,22 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     decoration: const InputDecoration(labelText: 'Earnings Note', border: OutlineInputBorder()),
                   ),
                   const Divider(height: 24),
-                  const Text('➖ Deductions (THB)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('➖ Deductions (THB)', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
+                      TextButton.icon(
+                        onPressed: () {
+                          advanceCtrl.text = '0';
+                          wpCtrl.text = '0';
+                          otherDedCtrl.text = '0';
+                          dedNoteCtrl.clear();
+                        },
+                        icon: const Icon(Icons.clear_all, size: 16, color: Colors.red),
+                        label: const Text('ล้างรายจ่ายทั้งหมด (0 ฿)', style: TextStyle(fontSize: 12, color: Colors.red)),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: advanceCtrl,
