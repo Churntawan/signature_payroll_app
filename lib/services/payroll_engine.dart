@@ -235,14 +235,8 @@ class PayrollEngine {
     rec.otDays = otUnits.round();
     rec.overtimePay = (otUnits * standardOtDailyRate).roundToDouble();
 
-    // Day-off quota: if explicitly logged > 0 use it; otherwise default to standard 4 days (unless prorated)
-    if (loggedDayOffs > 0) {
-      rec.dayOff = loggedDayOffs;
-    } else if (!rec.isProrate) {
-      rec.dayOff = 4;
-    } else {
-      rec.dayOff = 0;
-    }
+    // Day-offs: strictly based on actual logged attendance
+    rec.dayOff = loggedDayOffs;
 
     final totalCycleDays = rec.cycleEndDate.difference(rec.cycleStartDate).inDays + 1;
 
@@ -254,7 +248,7 @@ class PayrollEngine {
     // - Daily wage with explicit 'Work Days' logs: use explicit count
     // - Daily wage without explicit logs: actual calendar days in cycle minus total off days
     // - Prorated employee: workedDays minus total off days
-    // - Standard monthly employee: 30 days minus total off days
+    // - Standard monthly employee: actual calendar days in cycle minus total off days
     if (rec.wageType == 'Daily' && explicitWorkDays > 0) {
       rec.workDays = explicitWorkDays;
     } else if (rec.wageType == 'Daily') {
@@ -263,7 +257,7 @@ class PayrollEngine {
     } else if (rec.isProrate) {
       rec.workDays = (rec.workedDays - totalOffDays).clamp(0, totalCycleDays).round();
     } else {
-      rec.workDays = (30 - totalOffDays).clamp(0, 30).round();
+      rec.workDays = (totalCycleDays - totalOffDays).clamp(0, totalCycleDays).round();
     }
 
     // Handle base pay and excess day-offs deduction:

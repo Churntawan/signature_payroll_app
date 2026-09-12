@@ -210,19 +210,19 @@ void main() {
       expect(recWanWithAtt.dailyRate, 400.0);
       expect(recWanWithAtt.housingAllowance, 1000.0);
 
-      // Apply attendance with 2 sick days (13/08, 26/08) and default 4 day-offs in 31-day cycle:
-      // 31 - 4 - 2 = 25 days worked
+      // Apply attendance with 2 sick days (13/08, 26/08) and strictly logged day-offs (0 day-offs) in 31-day cycle:
+      // 31 - 0 - 2 = 29 days worked
       final wanAttendance = [
         {'date': '2026-08-13', 'category': 'Sick', 'units': 1.0},
         {'date': '2026-08-26', 'category': 'Sick', 'units': 1.0},
       ];
       PayrollEngine.applyAttendance(recWanWithAtt, wanAttendance);
-      expect(recWanWithAtt.dayOff, 4);
+      expect(recWanWithAtt.dayOff, 0);
       expect(recWanWithAtt.sickLeave, 2);
-      expect(recWanWithAtt.workDays, 25);
-      expect(recWanWithAtt.basePay, 25 * 400.0); // 10,000 THB
+      expect(recWanWithAtt.workDays, 29);
+      expect(recWanWithAtt.basePay, 29 * 400.0); // 11,600 THB
       expect(recWanWithAtt.housingAllowance, 1000.0);
-      expect(recWanWithAtt.netPay, 11000.0); // 10,000 + 1,000 = 11,000 THB
+      expect(recWanWithAtt.netPay, 12600.0); // 11,600 + 1,000 = 12,600 THB (matching Excel exactly)
 
       // Scenario: Daily worker with explicit 'Work Days' logged (e.g. 21 days)
       final recWanExplicit = PayrollEngine.calculateEmployeeRecord(employee: empWanFull, period: '2026-09')!;
@@ -696,7 +696,7 @@ void main() {
       expect(rec.excessDayOffDays, 2.0);
       expect(rec.formattedExcessDays, '2');
       expect(rec.excessDayOffDeduction, (2.0 * (12500.0 / 30.0)).roundToDouble()); // 833.0 THB
-      expect(rec.workDays, 24); // 30 standard base days - 6 total off days = 24
+      expect(rec.workDays, 25); // 31 calendar days in cycle - 6 total off days = 25
       expect(rec.housingAllowance, 1000.0);
       expect(rec.netPay, 12500.0 + 1000.0 - 833.0); // 12,667.0 THB
 
@@ -740,6 +740,37 @@ void main() {
 
       final payslip = PayrollEngine.formatLinePayslip(rec);
       expect(payslip.contains('Excess Day-off (หยุดเกินโควตา 0.5 วัน): -200.00'), isTrue);
+    });
+
+    test('Strictly logged Day-offs: 0 Day-offs with 2 Sick days does not create phantom Day-offs or false deduction', () {
+      // Monthly employee with base 12,000 THB and housing 1,000 THB
+      final empMonthly = Employee(
+        epCode: 'EP09',
+        nickname: 'Wan',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 10',
+        stayOutside: 'Yes',
+        startDate: DateTime(2025, 1, 1),
+      );
+
+      final recMonthly = PayrollEngine.calculateEmployeeRecord(employee: empMonthly, period: '2026-09')!;
+      // 2 Sick days logged, 0 Day-off logged in cycle (31 days total)
+      final attLogs = [
+        {'date': '2026-08-13', 'category': 'Sick', 'units': 1.0},
+        {'date': '2026-08-26', 'category': 'Sick', 'units': 1.0},
+      ];
+
+      PayrollEngine.applyAttendance(recMonthly, attLogs);
+
+      expect(recMonthly.dayOff, 0);
+      expect(recMonthly.sickLeave, 2);
+      expect(recMonthly.workDays, 29); // 31 - 2 = 29
+      expect(recMonthly.excessDayOffDays, 0.0);
+      expect(recMonthly.excessDayOffDeduction, 0.0);
+      expect(recMonthly.basePay, 12000.0);
+      expect(recMonthly.housingAllowance, 1000.0);
+      expect(recMonthly.netPay, 13000.0); // 12,000 + 1,000 = 13,000 THB
     });
   });
 }
