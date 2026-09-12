@@ -62,7 +62,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
     } else if (widget.periods.isNotEmpty) {
       _selectedPeriod = widget.periods.first;
     } else {
-      _selectedPeriod = '2026-09';
+      _selectedPeriod = currentPeriodStr;
     }
 
     SalaryHistoryService.initialize();

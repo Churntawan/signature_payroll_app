@@ -29,14 +29,37 @@ class ApiService {
     }
   }
 
-  // 2. Fetch all 24 periods
+  // 2. Fetch periods dynamically (rolling multi-year range + cloud periods)
   static Future<List<String>> fetchPeriods() async {
-    return [
-      '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06',
-      '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12',
-      '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06',
-      '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'
-    ];
+    final now = DateTime.now();
+    const startYear = 2024;
+    final endYear = now.year >= 2026 ? now.year + 2 : 2028;
+
+    final Set<String> periodsSet = {};
+    for (int y = startYear; y <= endYear; y++) {
+      for (int m = 1; m <= 12; m++) {
+        periodsSet.add('$y-${m.toString().padLeft(2, '0')}');
+      }
+    }
+
+    try {
+      final res = await http.get(
+        Uri.parse('$supabaseUrl/payroll_summary?select=period&limit=100'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(res.body);
+        for (final item in list) {
+          final p = item['period']?.toString();
+          if (p != null && p.length >= 7) {
+            periodsSet.add(p);
+          }
+        }
+      }
+    } catch (_) {}
+
+    final result = periodsSet.toList()..sort();
+    return result;
   }
 
   // 3. Fetch employees from Supabase Cloud

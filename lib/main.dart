@@ -3900,8 +3900,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                           final p = await showDatePicker(
                             context: context,
                             initialDate: selectedDate,
-                            firstDate: DateTime(2024),
-                            lastDate: DateTime(2030),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2050),
                           );
                           if (p != null) setDlgState(() => selectedDate = p);
                         },
@@ -4617,7 +4617,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               context: context,
                               initialDate: DateTime.now(),
                               firstDate: DateTime(2020),
-                              lastDate: DateTime(2030),
+                              lastDate: DateTime(2050),
                             );
                             if (picked != null) setDialogState(() => startDate = picked);
                           },
@@ -4723,7 +4723,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               context: context,
                               initialDate: start ?? DateTime.now(),
                               firstDate: DateTime(2020),
-                              lastDate: DateTime(2030),
+                              lastDate: DateTime(2050),
                             );
                             if (picked != null) setDialogState(() => start = picked);
                           },
@@ -4749,7 +4749,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               context: context,
                               initialDate: resign ?? DateTime.now(),
                               firstDate: DateTime(2020),
-                              lastDate: DateTime(2030),
+                              lastDate: DateTime(2050),
                             );
                             if (picked != null) setDialogState(() => resign = picked);
                           },

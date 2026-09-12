@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:signature_payroll_app/models/employee.dart';
+import 'package:signature_payroll_app/services/api_service.dart';
 import 'package:signature_payroll_app/services/auth_service.dart';
 import 'package:signature_payroll_app/services/payroll_engine.dart';
 
@@ -589,6 +590,30 @@ void main() {
       expect(record.otDays, equals(2));
       expect(record.overtimePay, equals(360.0));
       expect(record.netPay, equals(12000.0 + 360.0));
+    });
+
+    test('Perpetual long-term periods: fetchPeriods dynamically generates future years beyond 2026', () async {
+      final periods = await ApiService.fetchPeriods();
+      expect(periods.contains('2024-01'), isTrue);
+      expect(periods.contains('2025-01'), isTrue);
+      expect(periods.contains('2026-09'), isTrue);
+      expect(periods.contains('2027-01'), isTrue);
+      expect(periods.contains('2028-12'), isTrue);
+      expect(periods.length, greaterThanOrEqualTo(48)); // at least 4-5 years of months
+
+      // Ensure PayrollEngine calculates seamlessly for future years like 2028-05
+      final emp = Employee(
+        epCode: 'EP01',
+        nickname: 'Chujai',
+        status: 'Active',
+        baseSalary: 15000,
+        payGroup: 'Date : 10',
+      );
+      final rec2028 = PayrollEngine.calculateEmployeeRecord(employee: emp, period: '2028-05');
+      expect(rec2028, isNotNull);
+      expect(rec2028!.cycleStartDate, equals(DateTime(2028, 4, 11)));
+      expect(rec2028.cycleEndDate, equals(DateTime(2028, 5, 10)));
+      expect(rec2028.payDate, equals(DateTime(2028, 5, 10)));
     });
   });
 }
