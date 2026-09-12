@@ -69,7 +69,8 @@ class PayrollEngine {
 
     // 1. ตรวจสอบกรณีลาออกก่อนเริ่มรอบงวดนี้ -> ไม่นำมาคิด
     if (employee.resignDate != null) {
-      if (employee.resignDate!.isBefore(cycle.startDate)) {
+      if (employee.resignDate!.isBefore(cycle.startDate) ||
+          employee.resignDate!.isAtSameMomentAs(cycle.startDate)) {
         return null;
       }
     } else if (!employee.isActive) {
