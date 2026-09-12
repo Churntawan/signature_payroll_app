@@ -1171,7 +1171,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                       if (rec.housingAllowance > 0)
                                         _buildMiniBadge('🏠 ฿${currency.format(rec.housingAllowance)}', const Color(0xFFECFDF5), const Color(0xFF059669)),
                                       if (rec.excessDayOffDays > 0)
-                                        _buildMiniBadge('⚠️ หยุดเกิน ${rec.excessDayOffDays}d (-฿${currency.format(rec.excessDayOffDeduction)})', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
+                                        _buildMiniBadge('⚠️ หยุดเกิน ${rec.formattedExcessDays}d (-฿${currency.format(rec.excessDayOffDeduction)})', const Color(0xFFFEF2F2), const Color(0xFFDC2626)),
                                       if ((rec.overtimePay + rec.bonusPay + rec.otherExtra) > 0)
                                         _buildMiniBadge('+฿${currency.format(rec.overtimePay + rec.bonusPay + rec.otherExtra)}', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
                                       if ((rec.advanceDeduction + rec.workPermitDeduction + rec.otherDeduction) > 0)
@@ -2222,7 +2222,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         const SizedBox(height: 8),
         if (record.excessDayOffDeduction > 0)
           _buildPayslipLine(
-            'Excess Day-offs (${record.excessDayOffDays}d @ ฿${currency.format(record.dailyRate)})',
+            'Excess Day-offs (${record.formattedExcessDays}d @ ฿${currency.format(record.dailyRate)})',
             '-฿${currency.format(record.excessDayOffDeduction)}',
             color: const Color(0xFFDC2626),
           ),
@@ -4739,16 +4739,17 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   record.halfDays = int.tryParse(halfCtrl.text) ?? record.halfDays;
                   record.otDays = int.tryParse(otDaysCtrl.text) ?? record.otDays;
 
+                  final totalOffDays = (record.dayOff * 1.0) + (record.sickLeave * 1.0) + (record.halfDays * 0.5);
                   if (record.wageType == 'Daily') {
                     record.basePay = (record.dailyRate * record.workDays).roundToDouble();
-                    record.excessDayOffDays = 0;
+                    record.excessDayOffDays = 0.0;
                     record.excessDayOffDeduction = 0.0;
                   } else {
-                    if (record.dayOff > 4) {
-                      record.excessDayOffDays = record.dayOff - 4;
+                    if (totalOffDays > 4.0) {
+                      record.excessDayOffDays = totalOffDays - 4.0;
                       record.excessDayOffDeduction = (record.excessDayOffDays * record.dailyRate).roundToDouble();
                     } else {
-                      record.excessDayOffDays = 0;
+                      record.excessDayOffDays = 0.0;
                       record.excessDayOffDeduction = 0.0;
                     }
                   }

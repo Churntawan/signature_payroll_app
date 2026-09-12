@@ -32,8 +32,8 @@ class PayrollRecord {
   int otDays;
   List<Map<String, dynamic>> attendanceDetails;
 
-  // Excess Day-offs deduction (over 4 days)
-  int excessDayOffDays;
+  // Excess Day-offs deduction (over 4 days quota)
+  double excessDayOffDays;
   double excessDayOffDeduction;
 
   double advanceDeduction;
@@ -70,7 +70,7 @@ class PayrollRecord {
     this.halfDays = 0,
     this.otDays = 0,
     this.attendanceDetails = const [],
-    this.excessDayOffDays = 0,
+    this.excessDayOffDays = 0.0,
     this.excessDayOffDeduction = 0,
     this.advanceDeduction = 0,
     this.workPermitDeduction = 0,
@@ -78,6 +78,10 @@ class PayrollRecord {
     this.deductionNote = '',
     this.status = 'Approved',
   });
+
+  String get formattedExcessDays => excessDayOffDays % 1 == 0
+      ? excessDayOffDays.toInt().toString()
+      : excessDayOffDays.toString();
 
   double get totalExtra => overtimePay + bonusPay + otherExtra + housingAllowance;
   double get totalDeduction => advanceDeduction + workPermitDeduction + otherDeduction + excessDayOffDeduction;

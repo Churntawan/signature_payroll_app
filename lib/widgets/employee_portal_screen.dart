@@ -667,7 +667,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                             ],
                             if (rec.excessDayOffDeduction > 0) ...[
                               _buildAmountRow(
-                                '${L10n.excessDayOffDeduction.get(sub)} (${rec.excessDayOffDays} ${L10n.unitDays.sub(sub)})',
+                                '${L10n.excessDayOffDeduction.get(sub)} (${rec.formattedExcessDays} ${L10n.unitDays.sub(sub)})',
                                 rec.excessDayOffDeduction,
                                 currency,
                                 isDeduct: true,

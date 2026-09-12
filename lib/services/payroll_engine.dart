@@ -218,14 +218,17 @@ class PayrollEngine {
         .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
         .round();
     final loggedDayOffs = attendanceLogs
-        .where((a) => a['category'] == 'Day-off')
+        .where((a) => a['category'] == 'Day-off' || a['category'] == 'OFF')
         .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
         .round();
     rec.sickLeave = attendanceLogs
-        .where((a) => a['category'] == 'Sick')
+        .where((a) => a['category'] == 'Sick' || a['category'] == 'Sick Leave')
         .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
         .round();
-    rec.halfDays = attendanceLogs.where((a) => a['category'] == 'Half-day').length;
+    rec.halfDays = attendanceLogs
+        .where((a) => a['category'] == 'Half-day' || a['category'] == 'Half')
+        .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0))
+        .round();
     final otUnits = attendanceLogs
         .where((a) => a['category'] == 'OT Days' || a['category'] == 'OT')
         .fold<double>(0.0, (sum, a) => sum + ((a['units'] as num?)?.toDouble() ?? 1.0));
@@ -243,33 +246,38 @@ class PayrollEngine {
 
     final totalCycleDays = rec.cycleEndDate.difference(rec.cycleStartDate).inDays + 1;
 
+    // Total off days count towards the 4-day monthly quota:
+    // Day-offs (1.0 day/unit) + Sick Leave (1.0 day/unit) + Half-days (0.5 day/unit)
+    final totalOffDays = (rec.dayOff * 1.0) + (rec.sickLeave * 1.0) + (rec.halfDays * 0.5);
+
     // Work Days calculation:
     // - Daily wage with explicit 'Work Days' logs: use explicit count
-    // - Daily wage without explicit logs: actual calendar days in cycle (28, 29, 30, 31) minus day-offs and sick leaves
-    // - Prorated employee: workedDays minus day-offs and sick leaves
-    // - Standard monthly employee: 30 days minus effective day-offs (min 4) and sick leaves
+    // - Daily wage without explicit logs: actual calendar days in cycle minus total off days
+    // - Prorated employee: workedDays minus total off days
+    // - Standard monthly employee: 30 days minus total off days
     if (rec.wageType == 'Daily' && explicitWorkDays > 0) {
       rec.workDays = explicitWorkDays;
     } else if (rec.wageType == 'Daily') {
       final baseDays = rec.isProrate ? rec.workedDays : totalCycleDays;
-      rec.workDays = (baseDays - rec.dayOff - rec.sickLeave).clamp(0, totalCycleDays);
+      rec.workDays = (baseDays - totalOffDays).clamp(0, totalCycleDays).round();
     } else if (rec.isProrate) {
-      rec.workDays = (rec.workedDays - rec.dayOff - rec.sickLeave).clamp(0, totalCycleDays);
+      rec.workDays = (rec.workedDays - totalOffDays).clamp(0, totalCycleDays).round();
     } else {
-      rec.workDays = (30 - rec.dayOff - rec.sickLeave).clamp(0, 30);
+      rec.workDays = (30 - totalOffDays).clamp(0, 30).round();
     }
 
-    // Handle base pay and excess day-offs deduction
+    // Handle base pay and excess day-offs deduction:
+    // For standard monthly employees, quota is 4.0 days. Total off days beyond 4.0 days are deducted.
     if (rec.wageType == 'Daily') {
       rec.basePay = (rec.dailyRate * rec.workDays).roundToDouble();
-      rec.excessDayOffDays = 0;
+      rec.excessDayOffDays = 0.0;
       rec.excessDayOffDeduction = 0.0;
     } else {
-      if (rec.dayOff > 4) {
-        rec.excessDayOffDays = rec.dayOff - 4;
+      if (totalOffDays > 4.0) {
+        rec.excessDayOffDays = totalOffDays - 4.0;
         rec.excessDayOffDeduction = (rec.excessDayOffDays * rec.dailyRate).roundToDouble();
       } else {
-        rec.excessDayOffDays = 0;
+        rec.excessDayOffDays = 0.0;
         rec.excessDayOffDeduction = 0.0;
       }
     }
@@ -377,7 +385,7 @@ class PayrollEngine {
     if (record.totalDeduction > 0) {
       buffer.writeln('────────────────────');
       buffer.writeln('➖ *Deductions:*');
-      if (record.excessDayOffDeduction > 0) buffer.writeln('  • Excess Day-off (หยุดเกินโควตา ${record.excessDayOffDays} วัน): -${currency.format(record.excessDayOffDeduction)}');
+      if (record.excessDayOffDeduction > 0) buffer.writeln('  • Excess Day-off (หยุดเกินโควตา ${record.formattedExcessDays} วัน): -${currency.format(record.excessDayOffDeduction)}');
       if (record.advanceDeduction > 0) buffer.writeln('  • Advance Payment: -${currency.format(record.advanceDeduction)}');
       if (record.workPermitDeduction > 0) buffer.writeln('  • Work Permit / Passport: -${currency.format(record.workPermitDeduction)}');
       if (record.otherDeduction > 0) buffer.writeln('  • Other Deductions: -${currency.format(record.otherDeduction)}');

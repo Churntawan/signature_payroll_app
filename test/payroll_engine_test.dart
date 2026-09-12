@@ -437,7 +437,9 @@ void main() {
       expect(rec.sickLeave, 1);
       expect(rec.workDays, 24); // 29 - 4 - 1 = 24
       expect(rec.basePay, 11600.0);
-      expect(rec.netPay, 11600.0);
+      expect(rec.excessDayOffDays, 1.0);
+      expect(rec.excessDayOffDeduction, 400.0);
+      expect(rec.netPay, 11200.0); // 11600 base pay - 400 excess off deduction = 11200
     });
 
     test('Cherry payroll and non-overlapping adjustments for 2026-08 vs 2026-09', () {
@@ -658,6 +660,86 @@ void main() {
       recalculated.advanceDeduction += (adj['amount'] as double);
       expect(recalculated.advanceDeduction, equals(2000.0));
       expect(recalculated.netPay, equals(12000.0 - 2000.0));
+    });
+
+    test('Leave Quota: Tualek scenario (5 Day-offs + 1 Sick = 2 days excess off deduction)', () {
+      final tualek = Employee(
+        epCode: 'EP33',
+        nickname: 'Tualek',
+        status: 'Active',
+        baseSalary: 12500, // Daily rate = 416.6667
+        payGroup: 'Date : 1',
+        stayOutside: 'Yes',
+      );
+
+      final rec = PayrollEngine.calculateEmployeeRecord(
+        employee: tualek,
+        period: '2026-08',
+      )!;
+
+      // Attendance in 2026-08 cycle (02/07/2026 - 01/08/2026, 31 calendar days):
+      // 5 Day-offs + 1 Sick Leave = 6 days off total. Quota is 4 days -> 2 days excess!
+      final attLogs = [
+        {'date': '2026-07-04', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-07-11', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-07-14', 'category': 'Sick', 'units': 1.0},
+        {'date': '2026-07-18', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-07-25', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-01', 'category': 'Day-off', 'units': 1.0},
+      ];
+
+      PayrollEngine.applyAttendance(rec, attLogs);
+
+      expect(rec.dayOff, 5);
+      expect(rec.sickLeave, 1);
+      expect(rec.halfDays, 0);
+      expect(rec.excessDayOffDays, 2.0);
+      expect(rec.formattedExcessDays, '2');
+      expect(rec.excessDayOffDeduction, (2.0 * (12500.0 / 30.0)).roundToDouble()); // 833.0 THB
+      expect(rec.workDays, 24); // 30 standard base days - 6 total off days = 24
+      expect(rec.housingAllowance, 1000.0);
+      expect(rec.netPay, 12500.0 + 1000.0 - 833.0); // 12,667.0 THB
+
+      // Payslip verification
+      final payslip = PayrollEngine.formatLinePayslip(rec);
+      expect(payslip.contains('Excess Day-off (หยุดเกินโควตา 2 วัน): -833.00'), isTrue);
+    });
+
+    test('Leave Quota: Half-day contributes 0.5 days towards quota', () {
+      final emp = Employee(
+        epCode: 'EP20',
+        nickname: 'Nge',
+        status: 'Active',
+        baseSalary: 12000, // Daily rate = 400
+        payGroup: 'Date : 10',
+      );
+
+      final rec = PayrollEngine.calculateEmployeeRecord(
+        employee: emp,
+        period: '2026-08',
+      )!;
+
+      // 4 Day-offs + 1 Half-day = 4.5 days off total. Quota is 4 days -> 0.5 days excess!
+      final attLogs = [
+        {'date': '2026-07-12', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-07-19', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-07-26', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-02', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-08-05', 'category': 'Half-day', 'units': 1.0},
+      ];
+
+      PayrollEngine.applyAttendance(rec, attLogs);
+
+      expect(rec.dayOff, 4);
+      expect(rec.sickLeave, 0);
+      expect(rec.halfDays, 1);
+      expect(rec.excessDayOffDays, 0.5);
+      expect(rec.formattedExcessDays, '0.5');
+      expect(rec.excessDayOffDeduction, (0.5 * 400.0).roundToDouble()); // 200.0 THB
+      expect(rec.netPay, 12000.0 - 200.0); // 11,800.0 THB
+
+      final payslip = PayrollEngine.formatLinePayslip(rec);
+      expect(payslip.contains('Excess Day-off (หยุดเกินโควตา 0.5 วัน): -200.00'), isTrue);
     });
   });
 }
