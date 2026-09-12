@@ -615,5 +615,49 @@ void main() {
       expect(rec2028.cycleEndDate, equals(DateTime(2028, 5, 10)));
       expect(rec2028.payDate, equals(DateTime(2028, 5, 10)));
     });
+
+    test('Adjustments: supports custom/backdated Due Date and editing adjustments', () {
+      final emp = Employee(
+        epCode: 'EP04',
+        nickname: 'Zin',
+        status: 'Active',
+        baseSalary: 12000,
+        payGroup: 'Date : 10',
+      );
+
+      final record = PayrollEngine.calculateEmployeeRecord(
+        employee: emp,
+        period: '2026-09',
+      )!;
+
+      // Simulate an adjustment with a backdated Due Date (e.g. 2026-08-15)
+      final adj = {
+        'id': 101,
+        'ep_code': 'EP04',
+        'type': 'Deduction',
+        'category': 'Advance Payment',
+        'amount': 1500.0,
+        'due_date': '2026-08-15',
+        'period': '2026-09',
+        'description': 'Mid-month advance',
+      };
+
+      // Apply initial adjustment
+      record.advanceDeduction += (adj['amount'] as double);
+      expect(record.advanceDeduction, equals(1500.0));
+      expect(record.netPay, equals(12000.0 - 1500.0));
+
+      // Now simulate editing the adjustment to change amount to 2000.0 and Due Date to 2026-08-20
+      adj['amount'] = 2000.0;
+      adj['due_date'] = '2026-08-20';
+
+      final recalculated = PayrollEngine.calculateEmployeeRecord(
+        employee: emp,
+        period: '2026-09',
+      )!;
+      recalculated.advanceDeduction += (adj['amount'] as double);
+      expect(recalculated.advanceDeduction, equals(2000.0));
+      expect(recalculated.netPay, equals(12000.0 - 2000.0));
+    });
   });
 }

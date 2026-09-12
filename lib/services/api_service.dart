@@ -456,7 +456,55 @@ class ApiService {
     }
   }
 
-  // 17. Fetch Salary History from Supabase Cloud
+  // 17. Update a Payroll Adjustment entry in Supabase Cloud
+  static Future<bool> updateAdjustment({
+    dynamic id,
+    String? oldEpCode,
+    String? oldDueDate,
+    String? period,
+    String? dueDate,
+    String? epCode,
+    String? nickname,
+    String? type,
+    String? category,
+    String? description,
+    double? amount,
+    String? status,
+  }) async {
+    try {
+      String query;
+      if (id != null && id.toString().isNotEmpty) {
+        query = '$supabaseUrl/payroll_adjustments?id=eq.$id';
+      } else if (oldEpCode != null && oldDueDate != null) {
+        query = '$supabaseUrl/payroll_adjustments?ep_code=eq.$oldEpCode&due_date=eq.$oldDueDate';
+      } else {
+        return false;
+      }
+
+      final body = <String, dynamic>{};
+      if (period != null) body['period'] = period;
+      if (dueDate != null) body['due_date'] = dueDate;
+      if (epCode != null) body['ep_code'] = epCode;
+      if (nickname != null) body['nickname'] = nickname;
+      if (type != null) body['type'] = type;
+      if (category != null) body['category'] = category;
+      if (description != null) body['description'] = description;
+      if (amount != null) body['amount'] = amount;
+      if (status != null) body['status'] = status;
+
+      final res = await http.patch(
+        Uri.parse(query),
+        headers: _headers,
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 8));
+
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 18. Fetch Salary History from Supabase Cloud
   static Future<List<SalaryRecord>?> fetchSalaryHistory({String? epCode}) async {
     try {
       String query = '$supabaseUrl/salary_history?select=*&order=effective_period.desc';

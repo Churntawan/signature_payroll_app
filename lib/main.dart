@@ -1603,6 +1603,11 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                             ),
                             const SizedBox(width: 8),
                             IconButton(
+                              icon: const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF0284C7)),
+                              tooltip: 'แก้ไขรายการ (เปลี่ยน Due Date / จำนวนเงิน)',
+                              onPressed: () => _showEditAdjustmentDialog(adj),
+                            ),
+                            IconButton(
                               icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
                               tooltip: 'ยกเลิกลบรายจ่ายรายการนี้',
                               onPressed: () => _handleDeleteAdjustment(adj),
@@ -3984,6 +3989,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     final amtCtrl = TextEditingController(text: '1000');
     final descCtrl = TextEditingController();
     DateTime dueDate = DateTime.now();
+    String selectedPeriod = _selectedPeriod;
 
     showDialog(
       context: context,
@@ -3992,71 +3998,132 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           builder: (context, setDlgState) {
             final emp = _employees.firstWhere((e) => e.epCode == epCode, orElse: () => _employees.first);
             return AlertDialog(
-              title: const Text('Record Advance / Expense / Bonus'),
+              title: const Row(
+                children: [
+                  Icon(Icons.add_card, color: Color(0xFF0284C7), size: 24),
+                  SizedBox(width: 8),
+                  Text('Record Advance / Expense / Bonus'),
+                ],
+              ),
               content: SizedBox(
                 width: 440,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DropdownButtonFormField<String>(
-                      initialValue: epCode,
-                      decoration: const InputDecoration(labelText: 'Employee'),
-                      items: _employees.map((e) {
-                        return DropdownMenuItem(value: e.epCode, child: Text('${e.epCode} - ${e.nickname}'));
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) setDlgState(() => epCode = val);
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: type,
-                      decoration: const InputDecoration(labelText: 'Type'),
-                      items: const [
-                        DropdownMenuItem(value: 'Deduction', child: Text('Deduction (รายการหักเงิน)')),
-                        DropdownMenuItem(value: 'Income', child: Text('Income (รายรับเสริม/โบนัส)')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) setDlgState(() => type = val);
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: category,
-                      decoration: const InputDecoration(labelText: 'Category'),
-                      items: type == 'Deduction'
-                          ? const [
-                              DropdownMenuItem(value: 'Advance Payment', child: Text('Advance Payment (เงินเบิกล่วงหน้า)')),
-                              DropdownMenuItem(value: 'Work Permit', child: Text('Work Permit Fee (ค่าเอกสารแรงงาน)')),
-                              DropdownMenuItem(value: 'Passport / CI', child: Text('Passport / CI (ค่าพาสปอร์ต)')),
-                              DropdownMenuItem(value: 'Other Deduction', child: Text('Other Deduction (หักอื่นๆ)')),
-                            ]
-                          : const [
-                              DropdownMenuItem(value: 'Bonus', child: Text('Bonus / Incentive (เบี้ยขยัน/โบนัส)')),
-                              DropdownMenuItem(value: 'OT Allowance', child: Text('OT Allowance (ค่ากะพิเศษ)')),
-                              DropdownMenuItem(value: 'Other Income', child: Text('Other Income (รายรับอื่นๆ)')),
-                            ],
-                      onChanged: (val) {
-                        if (val != null) setDlgState(() => category = val);
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: amtCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Amount (THB)'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: descCtrl,
-                      decoration: const InputDecoration(labelText: 'Description / Note'),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        initialValue: epCode,
+                        decoration: const InputDecoration(labelText: 'Employee (พนักงาน)'),
+                        items: _employees.map((e) {
+                          return DropdownMenuItem(value: e.epCode, child: Text('${e.epCode} - ${e.nickname}'));
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setDlgState(() => epCode = val);
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              initialValue: type,
+                              decoration: const InputDecoration(labelText: 'Type (ประเภท)'),
+                              items: const [
+                                DropdownMenuItem(value: 'Deduction', child: Text('Deduction (หักเงิน)')),
+                                DropdownMenuItem(value: 'Income', child: Text('Income (รายรับ)')),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setDlgState(() {
+                                    type = val;
+                                    category = val == 'Deduction' ? 'Advance Payment' : 'Bonus';
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: category,
+                              decoration: const InputDecoration(labelText: 'Category (หมวดหมู่)'),
+                              items: type == 'Deduction'
+                                  ? const [
+                                      DropdownMenuItem(value: 'Advance Payment', child: Text('Advance (เบิกเงิน)')),
+                                      DropdownMenuItem(value: 'Work Permit', child: Text('Work Permit (เอกสาร)')),
+                                      DropdownMenuItem(value: 'Passport / CI', child: Text('Passport/CI (พาสปอร์ต)')),
+                                      DropdownMenuItem(value: 'Other Deduction', child: Text('Other (หักอื่นๆ)')),
+                                    ]
+                                  : const [
+                                      DropdownMenuItem(value: 'Bonus', child: Text('Bonus (โบนัส)')),
+                                      DropdownMenuItem(value: 'OT Allowance', child: Text('OT (ค่ากะ)')),
+                                      DropdownMenuItem(value: 'Other Income', child: Text('Other (รายรับอื่นๆ)')),
+                                    ],
+                              onChanged: (val) {
+                                if (val != null) setDlgState(() => category = val);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: dueDate,
+                            firstDate: DateTime(2023),
+                            lastDate: DateTime(2035),
+                          );
+                          if (picked != null) {
+                            setDlgState(() => dueDate = picked);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Due Date (วันที่มีผล / คีย์ย้อนหลังได้)',
+                            suffixIcon: Icon(Icons.calendar_month, color: Color(0xFF0284C7)),
+                          ),
+                          child: Text(
+                            DateFormat('dd/MM/yyyy (yyyy-MM-dd)').format(dueDate),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: amtCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Amount (จำนวนเงินบาท)',
+                          prefixText: '฿ ',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: descCtrl,
+                        decoration: const InputDecoration(labelText: 'Description / Note (หมายเหตุ)'),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: selectedPeriod,
+                        decoration: const InputDecoration(labelText: 'Payroll Period (งวดเงินเดือน)'),
+                        items: _periods.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                        onChanged: (val) {
+                          if (val != null) setDlgState(() => selectedPeriod = val);
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               ),
               actions: [
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: () async {
                     final amount = double.tryParse(amtCtrl.text) ?? 0;
                     final dueStr = DateFormat('yyyy-MM-dd').format(dueDate);
@@ -4064,7 +4131,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     final navigator = Navigator.of(ctx);
 
                     final success = await ApiService.createAdjustment(
-                      period: _selectedPeriod,
+                      period: selectedPeriod,
                       dueDate: dueStr,
                       epCode: epCode,
                       nickname: emp.nickname,
@@ -4085,6 +4152,218 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                     }
                   },
                   child: const Text('Save to Database'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showEditAdjustmentDialog(Map<String, dynamic> adj) {
+    final id = adj['id'];
+    String epCode = adj['ep_code']?.toString() ?? _employees.first.epCode;
+    String type = adj['type']?.toString() ?? 'Deduction';
+    String category = adj['category']?.toString() ?? 'Advance Payment';
+    final amtCtrl = TextEditingController(text: ((adj['amount'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0));
+    final descCtrl = TextEditingController(text: adj['description']?.toString() ?? '');
+
+    DateTime dueDate = DateTime.now();
+    try {
+      if (adj['due_date'] != null) {
+        dueDate = DateTime.parse(adj['due_date'].toString());
+      }
+    } catch (_) {}
+
+    String selectedPeriod = adj['period']?.toString() ?? _selectedPeriod;
+    final oldEpCode = adj['ep_code']?.toString();
+    final oldDueDate = adj['due_date']?.toString();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDlgState) {
+            final emp = _employees.firstWhere((e) => e.epCode == epCode, orElse: () => _employees.first);
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.edit_note, color: Color(0xFF0284C7), size: 26),
+                  const SizedBox(width: 8),
+                  Text('แก้ไขรายการ (${adj['nickname'] ?? epCode})'),
+                ],
+              ),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      DropdownButtonFormField<String>(
+                        value: epCode,
+                        decoration: const InputDecoration(labelText: 'Employee (พนักงาน)'),
+                        items: _employees.map((e) {
+                          return DropdownMenuItem(value: e.epCode, child: Text('${e.epCode} - ${e.nickname}'));
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) setDlgState(() => epCode = val);
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: type,
+                              decoration: const InputDecoration(labelText: 'Type (ประเภท)'),
+                              items: const [
+                                DropdownMenuItem(value: 'Deduction', child: Text('Deduction (หักเงิน)')),
+                                DropdownMenuItem(value: 'Income', child: Text('Income (รายรับ)')),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setDlgState(() {
+                                    type = val;
+                                    category = val == 'Deduction' ? 'Advance Payment' : 'Bonus';
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: category,
+                              decoration: const InputDecoration(labelText: 'Category (หมวดหมู่)'),
+                              items: type == 'Deduction'
+                                  ? const [
+                                      DropdownMenuItem(value: 'Advance Payment', child: Text('Advance (เบิกเงิน)')),
+                                      DropdownMenuItem(value: 'Work Permit', child: Text('Work Permit (เอกสาร)')),
+                                      DropdownMenuItem(value: 'Passport / CI', child: Text('Passport/CI (พาสปอร์ต)')),
+                                      DropdownMenuItem(value: 'Other Deduction', child: Text('Other (หักอื่นๆ)')),
+                                    ]
+                                  : const [
+                                      DropdownMenuItem(value: 'Bonus', child: Text('Bonus (โบนัส)')),
+                                      DropdownMenuItem(value: 'OT Allowance', child: Text('OT (ค่ากะ)')),
+                                      DropdownMenuItem(value: 'Other Income', child: Text('Other (รายรับอื่นๆ)')),
+                                    ],
+                              onChanged: (val) {
+                                if (val != null) setDlgState(() => category = val);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: dueDate,
+                            firstDate: DateTime(2023),
+                            lastDate: DateTime(2035),
+                          );
+                          if (picked != null) {
+                            setDlgState(() => dueDate = picked);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Due Date (วันที่มีผล / คีย์ย้อนหลังได้)',
+                            suffixIcon: Icon(Icons.calendar_month, color: Color(0xFF0284C7)),
+                          ),
+                          child: Text(
+                            DateFormat('dd/MM/yyyy (yyyy-MM-dd)').format(dueDate),
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: amtCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Amount (จำนวนเงินบาท)',
+                          prefixText: '฿ ',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: descCtrl,
+                        decoration: const InputDecoration(labelText: 'Description / Note (หมายเหตุ)'),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: selectedPeriod,
+                        decoration: const InputDecoration(labelText: 'Payroll Period (งวดเงินเดือน)'),
+                        items: _periods.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+                        onChanged: (val) {
+                          if (val != null) setDlgState(() => selectedPeriod = val);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.save, size: 18),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    final amount = double.tryParse(amtCtrl.text) ?? 0;
+                    final dueStr = DateFormat('yyyy-MM-dd').format(dueDate);
+                    final messenger = ScaffoldMessenger.of(context);
+                    final navigator = Navigator.of(ctx);
+
+                    // 1. Update in Cloud
+                    final success = await ApiService.updateAdjustment(
+                      id: id,
+                      oldEpCode: oldEpCode,
+                      oldDueDate: oldDueDate,
+                      period: selectedPeriod,
+                      dueDate: dueStr,
+                      epCode: epCode,
+                      nickname: emp.nickname,
+                      type: type,
+                      category: category,
+                      description: descCtrl.text,
+                      amount: amount,
+                    );
+
+                    // 2. Update local state
+                    setState(() {
+                      adj['ep_code'] = epCode;
+                      adj['nickname'] = emp.nickname;
+                      adj['type'] = type;
+                      adj['category'] = category;
+                      adj['description'] = descCtrl.text;
+                      adj['amount'] = amount;
+                      adj['due_date'] = dueStr;
+                      adj['period'] = selectedPeriod;
+                    });
+
+                    _payrollRecords.remove(epCode);
+                    if (oldEpCode != null && oldEpCode != epCode) {
+                      _payrollRecords.remove(oldEpCode);
+                    }
+
+                    navigator.pop();
+                    if (mounted) {
+                      await _fetchDataAndRecalculate();
+                      messenger.showSnackBar(
+                        SnackBar(
+                          content: Text(success ? '✅ อัปเดตรายการค่าใช้จ่ายและวัน Due Date เรียบร้อยแล้ว' : '⚠️ บันทึกในเครื่องแล้ว'),
+                          backgroundColor: success ? const Color(0xFF10B981) : Colors.orange,
+                        ),
+                      );
+                    }
+                  },
+                  label: const Text('บันทึกการแก้ไข'),
                 ),
               ],
             );
