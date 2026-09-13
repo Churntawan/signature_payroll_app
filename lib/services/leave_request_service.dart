@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/leave_request.dart';
 import 'session_storage.dart';
+import 'api_service.dart';
 
 class LeaveRequestResult {
   final bool success;
@@ -52,6 +53,26 @@ class LeaveRequestService {
     pendingCountNotifier.value = count;
   }
 
+  /// Sync leave requests from Supabase Cloud
+  static Future<void> syncFromCloud({String? epCode}) async {
+    initialize();
+    try {
+      final cloudLogs = await ApiService.fetchLeaveRequests(epCode: epCode);
+      if (cloudLogs.isNotEmpty) {
+        final cloudReqs = cloudLogs.map((e) => LeaveRequest.fromJson(e)).toList();
+        final Map<String, LeaveRequest> map = {
+          for (final r in _cachedRequests) r.id: r,
+        };
+        for (final cr in cloudReqs) {
+          map[cr.id] = cr;
+        }
+        _cachedRequests = map.values.toList();
+        _saveToStorage();
+      }
+    } catch (_) {}
+    _updatePendingCount();
+  }
+
   /// Get all requests, optionally filtered by employee code
   static List<LeaveRequest> getRequests({String? epCode}) {
     initialize();
@@ -73,23 +94,31 @@ class LeaveRequestService {
       ..sort((a, b) => a.date.compareTo(b.date));
   }
 
-  /// Submit a new leave request with 1-day advance notice validation
-  static LeaveRequestResult submitRequest({
+  /// Submit a new leave request with advance notice validation and Cloud persistence
+  static Future<LeaveRequestResult> submitRequest({
     required String epCode,
     required String nickname,
     required DateTime date,
     required String category,
     String note = '',
-  }) {
+  }) async {
     initialize();
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final requestedDay = DateTime(date.year, date.month, date.day);
 
-    // Rule: Must request at least 1 day in advance (Tomorrow onwards)
-    if (!requestedDay.isAfter(today)) {
-      return const LeaveRequestResult(success: false, error: 'date_too_soon');
+    // Validation Rule:
+    // - Sick Leave: Allowed for today or future (cannot be in the past)
+    // - Day-off: Must request at least 1 day in advance (Tomorrow onwards)
+    if (category == 'Sick') {
+      if (requestedDay.isBefore(today)) {
+        return const LeaveRequestResult(success: false, error: 'date_too_soon');
+      }
+    } else {
+      if (!requestedDay.isAfter(today)) {
+        return const LeaveRequestResult(success: false, error: 'date_too_soon');
+      }
     }
 
     final dateStr = '${requestedDay.year.toString().padLeft(4, '0')}-${requestedDay.month.toString().padLeft(2, '0')}-${requestedDay.day.toString().padLeft(2, '0')}';
@@ -104,8 +133,23 @@ class LeaveRequestService {
       return const LeaveRequestResult(success: false, error: 'duplicate_date');
     }
 
+    // 1. Create on Supabase Cloud
+    String generatedId = 'REQ-${DateTime.now().millisecondsSinceEpoch}';
+    try {
+      final cloudRes = await ApiService.createLeaveRequest(
+        date: dateStr,
+        epCode: epCode,
+        nickname: nickname,
+        category: category,
+        note: note.trim(),
+      );
+      if (cloudRes != null && cloudRes['id'] != null) {
+        generatedId = cloudRes['id'].toString();
+      }
+    } catch (_) {}
+
     final newReq = LeaveRequest(
-      id: 'REQ-${DateTime.now().millisecondsSinceEpoch}',
+      id: generatedId,
       epCode: epCode,
       nickname: nickname,
       date: requestedDay,
@@ -131,30 +175,43 @@ class LeaveRequestService {
     final idx = _cachedRequests.indexWhere((r) => r.id == req.id);
     if (idx == -1) return false;
 
-    // Call attendance creator
-    final success = await onAttendanceCreated(
-      req.dateStr,
-      req.epCode,
-      req.nickname,
-      req.category,
-      req.note.isEmpty ? 'Approved leave request' : req.note,
-    );
-
-    if (success) {
-      _cachedRequests[idx].status = LeaveRequestStatus.approved;
-      _cachedRequests[idx].reviewedAt = DateTime.now();
-      _saveToStorage();
-      return true;
+    bool cloudUpdated = false;
+    // If id is a numeric ID from Supabase attendance_log, update the row in Supabase
+    if (int.tryParse(req.id) != null) {
+      cloudUpdated = await ApiService.approveLeaveRequest(
+        id: req.id,
+        category: req.category,
+        note: req.note.isEmpty ? 'Approved leave request' : req.note,
+      );
     }
-    return false;
+
+    // If not an existing attendance_log row or cloud patch failed, invoke creator callback
+    if (!cloudUpdated) {
+      await onAttendanceCreated(
+        req.dateStr,
+        req.epCode,
+        req.nickname,
+        req.category,
+        req.note.isEmpty ? 'Approved leave request' : req.note,
+      );
+    }
+
+    _cachedRequests[idx].status = LeaveRequestStatus.approved;
+    _cachedRequests[idx].reviewedAt = DateTime.now();
+    _saveToStorage();
+    return true;
   }
 
   /// Reject/Ignore request
-  static bool rejectRequest(LeaveRequest req, {String? reason}) {
+  static Future<bool> rejectRequest(LeaveRequest req, {String? reason}) async {
     initialize();
 
     final idx = _cachedRequests.indexWhere((r) => r.id == req.id);
     if (idx == -1) return false;
+
+    if (int.tryParse(req.id) != null) {
+      await ApiService.rejectLeaveRequest(id: req.id, reason: reason);
+    }
 
     _cachedRequests[idx].status = LeaveRequestStatus.rejected;
     _cachedRequests[idx].reviewedAt = DateTime.now();
@@ -164,13 +221,16 @@ class LeaveRequestService {
   }
 
   /// Cancel request by employee (only if still pending)
-  static bool cancelRequest(String requestId) {
+  static Future<bool> cancelRequest(String requestId) async {
     initialize();
 
     final idx = _cachedRequests.indexWhere((r) => r.id == requestId);
     if (idx == -1) return false;
 
     if (_cachedRequests[idx].status == LeaveRequestStatus.pending) {
+      if (int.tryParse(requestId) != null) {
+        await ApiService.deleteLeaveRequest(requestId);
+      }
       _cachedRequests.removeAt(idx);
       _saveToStorage();
       return true;

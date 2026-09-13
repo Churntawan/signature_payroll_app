@@ -122,7 +122,10 @@ class ApiService {
       final res = await http.get(Uri.parse(query), headers: _headers).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final List<dynamic> list = jsonDecode(res.body);
-        return list.map((e) => Map<String, dynamic>.from(e)).toList();
+        return list
+            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => !(e['category']?.toString().startsWith('Request:') ?? false))
+            .toList();
       }
     } catch (_) {}
     return [];
@@ -548,5 +551,115 @@ class ApiService {
       return false;
     }
   }
+
+  // 20. Fetch Leave Requests from Supabase Cloud
+  static Future<List<Map<String, dynamic>>> fetchLeaveRequests({String? epCode}) async {
+    try {
+      String query = '$supabaseUrl/attendance_log?category=like.Request:*&order=created_at.desc';
+      if (epCode != null && epCode.isNotEmpty) {
+        query += '&ep_code=eq.$epCode';
+      }
+      final res = await http.get(Uri.parse(query), headers: _headers).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(res.body);
+        return list.map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // 21. Create Leave Request in Supabase Cloud
+  static Future<Map<String, dynamic>?> createLeaveRequest({
+    required String date,
+    required String epCode,
+    required String nickname,
+    required String category, // 'Day-off' or 'Sick'
+    required String note,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$supabaseUrl/attendance_log'),
+        headers: {
+          ..._headers,
+          'Prefer': 'return=representation',
+        },
+        body: jsonEncode({
+          'date': date,
+          'ep_code': epCode,
+          'nickname': nickname,
+          'category': 'Request:$category',
+          'shift': 'Pending',
+          'units': 1.0,
+          'note': note,
+        }),
+      ).timeout(const Duration(seconds: 5));
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        final List<dynamic> list = jsonDecode(res.body);
+        if (list.isNotEmpty) {
+          return Map<String, dynamic>.from(list.first);
+        }
+        return {'success': true};
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // 22. Approve Leave Request in Supabase Cloud
+  static Future<bool> approveLeaveRequest({
+    required dynamic id,
+    required String category, // 'Day-off' or 'Sick'
+    required String note,
+  }) async {
+    try {
+      final cleanCat = category.replaceFirst('Request:', '');
+      final res = await http.patch(
+        Uri.parse('$supabaseUrl/attendance_log?id=eq.$id'),
+        headers: _headers,
+        body: jsonEncode({
+          'category': cleanCat,
+          'shift': 'Normal',
+          'note': note,
+        }),
+      ).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 23. Reject Leave Request in Supabase Cloud
+  static Future<bool> rejectLeaveRequest({
+    required dynamic id,
+    String? reason,
+  }) async {
+    try {
+      final res = await http.patch(
+        Uri.parse('$supabaseUrl/attendance_log?id=eq.$id'),
+        headers: _headers,
+        body: jsonEncode({
+          'shift': 'Rejected',
+          if (reason != null && reason.isNotEmpty) 'note': reason,
+        }),
+      ).timeout(const Duration(seconds: 5));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 24. Delete/Cancel Leave Request from Supabase Cloud
+  static Future<bool> deleteLeaveRequest(dynamic id) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$supabaseUrl/attendance_log?id=eq.$id'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 8));
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (_) {
+      return false;
+    }
+  }
 }
+
 

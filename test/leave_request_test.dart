@@ -4,23 +4,23 @@ import 'package:signature_payroll_app/services/leave_request_service.dart';
 import 'package:signature_payroll_app/services/localization_service.dart';
 
 void main() {
-  setUp(() {
+  setUp(() async {
     LeaveRequestService.initialize();
     // Clear requests for test
     final reqs = LeaveRequestService.getRequests();
     for (final r in reqs) {
-      LeaveRequestService.cancelRequest(r.id);
+      await LeaveRequestService.cancelRequest(r.id);
     }
   });
 
   group('Leave Request & Approval Tests', () {
-    test('Advance notice validation: rejects today and past dates', () {
+    test('Advance notice validation: Day-off requires 1 day advance, Sick allows today, rejects past dates', () async {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final yesterday = today.subtract(const Duration(days: 1));
 
-      // Attempt today
-      final resToday = LeaveRequestService.submitRequest(
+      // Attempt Day-off today -> rejected
+      final resToday = await LeaveRequestService.submitRequest(
         epCode: 'EP39',
         nickname: 'Cherry',
         date: today,
@@ -30,10 +30,20 @@ void main() {
       expect(resToday.success, isFalse);
       expect(resToday.error, 'date_too_soon');
 
-      // Attempt yesterday
-      final resYesterday = LeaveRequestService.submitRequest(
+      // Attempt Sick today -> accepted
+      final resSickToday = await LeaveRequestService.submitRequest(
         epCode: 'EP39',
         nickname: 'Cherry',
+        date: today,
+        category: 'Sick',
+        note: 'High fever',
+      );
+      expect(resSickToday.success, isTrue);
+
+      // Attempt yesterday for Sick -> rejected
+      final resYesterday = await LeaveRequestService.submitRequest(
+        epCode: 'EP01',
+        nickname: 'Chujai',
         date: yesterday,
         category: 'Sick',
         note: 'Fever',
@@ -42,13 +52,13 @@ void main() {
       expect(resYesterday.error, 'date_too_soon');
     });
 
-    test('Advance notice validation: accepts tomorrow and future dates with notes', () {
+    test('Advance notice validation: accepts tomorrow and future dates with notes', () async {
       final now = DateTime.now();
       final tomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
       final nextWeek = DateTime(now.year, now.month, now.day).add(const Duration(days: 7));
 
       // Tomorrow with Day-off and note
-      final resTomorrow = LeaveRequestService.submitRequest(
+      final resTomorrow = await LeaveRequestService.submitRequest(
         epCode: 'EP39',
         nickname: 'Cherry',
         date: tomorrow,
@@ -62,7 +72,7 @@ void main() {
       expect(resTomorrow.request!.status, LeaveRequestStatus.pending);
 
       // Next week with Sick Leave and note
-      final resSick = LeaveRequestService.submitRequest(
+      final resSick = await LeaveRequestService.submitRequest(
         epCode: 'EP01',
         nickname: 'Chujai',
         date: nextWeek,
@@ -75,11 +85,11 @@ void main() {
       expect(LeaveRequestService.pendingCountNotifier.value, 2);
     });
 
-    test('Duplicate date validation: prevents duplicate active requests for same employee', () {
+    test('Duplicate date validation: prevents duplicate active requests for same employee', () async {
       final now = DateTime.now();
       final futureDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 3));
 
-      final first = LeaveRequestService.submitRequest(
+      final first = await LeaveRequestService.submitRequest(
         epCode: 'EP23',
         nickname: 'Aem',
         date: futureDate,
@@ -88,7 +98,7 @@ void main() {
       );
       expect(first.success, isTrue);
 
-      final second = LeaveRequestService.submitRequest(
+      final second = await LeaveRequestService.submitRequest(
         epCode: 'EP23',
         nickname: 'Aem',
         date: futureDate,
@@ -103,7 +113,7 @@ void main() {
       final now = DateTime.now();
       final futureDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 4));
 
-      final submitted = LeaveRequestService.submitRequest(
+      final submitted = await LeaveRequestService.submitRequest(
         epCode: 'EP10',
         nickname: 'Zin',
         date: futureDate,
@@ -131,11 +141,11 @@ void main() {
       expect(submitted.request!.reviewedAt, isNotNull);
     });
 
-    test('Reject request: marks rejected with reason', () {
+    test('Reject request: marks rejected with reason', () async {
       final now = DateTime.now();
       final futureDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 5));
 
-      final submitted = LeaveRequestService.submitRequest(
+      final submitted = await LeaveRequestService.submitRequest(
         epCode: 'EP05',
         nickname: 'Benz',
         date: futureDate,
@@ -144,17 +154,17 @@ void main() {
       );
       expect(submitted.success, isTrue);
 
-      final rejected = LeaveRequestService.rejectRequest(submitted.request!, reason: 'Understaffed');
+      final rejected = await LeaveRequestService.rejectRequest(submitted.request!, reason: 'Understaffed');
       expect(rejected, isTrue);
       expect(submitted.request!.status, LeaveRequestStatus.rejected);
       expect(submitted.request!.rejectionReason, 'Understaffed');
     });
 
-    test('Cancel request: employee can cancel pending request', () {
+    test('Cancel request: employee can cancel pending request', () async {
       final now = DateTime.now();
       final futureDate = DateTime(now.year, now.month, now.day).add(const Duration(days: 6));
 
-      final submitted = LeaveRequestService.submitRequest(
+      final submitted = await LeaveRequestService.submitRequest(
         epCode: 'EP15',
         nickname: 'Fern',
         date: futureDate,
@@ -163,7 +173,7 @@ void main() {
       expect(submitted.success, isTrue);
       expect(LeaveRequestService.getRequests(epCode: 'EP15').length, 1);
 
-      final cancelled = LeaveRequestService.cancelRequest(submitted.request!.id);
+      final cancelled = await LeaveRequestService.cancelRequest(submitted.request!.id);
       expect(cancelled, isTrue);
       expect(LeaveRequestService.getRequests(epCode: 'EP15').isEmpty, isTrue);
     });

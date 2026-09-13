@@ -85,14 +85,29 @@ class LeaveRequest {
       } catch (_) {}
     }
 
+    String cat = json['category']?.toString() ?? 'Day-off';
+    if (cat.startsWith('Request:')) {
+      cat = cat.substring('Request:'.length);
+    }
+
+    LeaveRequestStatus status;
+    final statusStr = json['status']?.toString() ?? json['shift']?.toString();
+    if (statusStr == 'Approved' || statusStr == 'approved' || statusStr == 'Normal') {
+      status = LeaveRequestStatus.approved;
+    } else if (statusStr == 'Rejected' || statusStr == 'rejected' || statusStr == 'Ignored') {
+      status = LeaveRequestStatus.rejected;
+    } else {
+      status = LeaveRequestStatus.pending;
+    }
+
     return LeaveRequest(
       id: json['id']?.toString() ?? 'REQ-${DateTime.now().millisecondsSinceEpoch}',
       epCode: json['ep_code']?.toString() ?? '',
       nickname: json['nickname']?.toString() ?? '',
       date: reqDate,
-      category: json['category']?.toString() ?? 'Day-off',
+      category: cat,
       note: json['note']?.toString() ?? '',
-      status: LeaveRequestStatus.fromString(json['status']?.toString()),
+      status: status,
       createdAt: cAt,
       reviewedAt: rAt,
       rejectionReason: json['rejection_reason']?.toString(),

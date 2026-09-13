@@ -6,8 +6,8 @@ import '../services/localization_service.dart';
 
 class LeaveRequestsModal extends StatefulWidget {
   final List<Map<String, dynamic>> attendanceLogs;
-  final Function(LeaveRequest req) onApprove;
-  final Function(LeaveRequest req) onReject;
+  final Future<void> Function(LeaveRequest req) onApprove;
+  final Future<void> Function(LeaveRequest req) onReject;
 
   const LeaveRequestsModal({
     super.key,
@@ -318,9 +318,9 @@ class _LeaveRequestsModalState extends State<LeaveRequestsModal> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   OutlinedButton.icon(
-                    onPressed: () {
-                      widget.onReject(req);
-                      setState(() {});
+                    onPressed: () async {
+                      await widget.onReject(req);
+                      if (mounted) setState(() {});
                     },
                     icon: const Icon(Icons.close, size: 14),
                     label: Text(L10n.btnIgnore.get(sub)),
@@ -332,9 +332,9 @@ class _LeaveRequestsModalState extends State<LeaveRequestsModal> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
-                    onPressed: () {
-                      widget.onApprove(req);
-                      setState(() {});
+                    onPressed: () async {
+                      await widget.onApprove(req);
+                      if (mounted) setState(() {});
                     },
                     icon: const Icon(Icons.check, size: 14),
                     label: Text(L10n.btnApprove.get(sub)),

@@ -89,6 +89,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   void initState() {
     super.initState();
     LeaveRequestService.initialize();
+    LeaveRequestService.syncFromCloud().ignore();
     SalaryHistoryService.initialize();
     SalaryHistoryService.syncFromCloud().ignore();
     _employees = List.from(initialEmployees);
@@ -153,6 +154,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     // Fetch real attendance and adjustments for this period
     final att = await ApiService.fetchAttendance(period: _selectedPeriod);
     final adj = await ApiService.fetchAdjustments(period: _selectedPeriod);
+    await LeaveRequestService.syncFromCloud();
 
     if (!mounted) return;
     setState(() {
@@ -618,9 +620,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                               );
                             }
                           },
-                          onReject: (req) {
-                            LeaveRequestService.rejectRequest(req);
+                          onReject: (req) async {
+                            await LeaveRequestService.rejectRequest(req);
                             if (mounted) {
+                              await _fetchDataAndRecalculate();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text('ปฏิเสธคำขอของ ${req.nickname} แล้ว'),

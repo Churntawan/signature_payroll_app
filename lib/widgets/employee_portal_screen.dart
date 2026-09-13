@@ -37,7 +37,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
   bool _isExporting = false;
   final GlobalKey _payslipKey = GlobalKey();
 
-  DateTime _requestedDate = DateTime.now().add(const Duration(days: 1));
+  DateTime _requestedDate = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day + 1);
   String _requestedCategory = 'Day-off';
   final TextEditingController _requestNoteCtrl = TextEditingController();
   bool _isSubmittingRequest = false;
@@ -56,6 +56,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
   void initState() {
     super.initState();
     final now = DateTime.now();
+    _requestedDate = DateTime(now.year, now.month, now.day + 1);
     final currentPeriodStr = DateFormat('yyyy-MM').format(now);
     if (widget.periods.contains(currentPeriodStr)) {
       _selectedPeriod = currentPeriodStr;
@@ -66,6 +67,9 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
     }
 
     SalaryHistoryService.initialize();
+    LeaveRequestService.syncFromCloud(epCode: widget.employee.epCode).then((_) {
+      if (mounted) setState(() {});
+    });
     _fetchEmployeeData();
   }
 
@@ -1082,7 +1086,16 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                         children: [
                           Expanded(
                             child: InkWell(
-                              onTap: () => setState(() => _requestedCategory = 'Day-off'),
+                              onTap: () {
+                                setState(() {
+                                  _requestedCategory = 'Day-off';
+                                  final now = DateTime.now();
+                                  final tomorrow = DateTime(now.year, now.month, now.day + 1);
+                                  if (_requestedDate.isBefore(tomorrow)) {
+                                    _requestedDate = tomorrow;
+                                  }
+                                });
+                              },
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1112,7 +1125,16 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: InkWell(
-                              onTap: () => setState(() => _requestedCategory = 'Sick'),
+                              onTap: () {
+                                setState(() {
+                                  _requestedCategory = 'Sick';
+                                  final now = DateTime.now();
+                                  final today = DateTime(now.year, now.month, now.day);
+                                  if (_requestedDate.isBefore(today)) {
+                                    _requestedDate = today;
+                                  }
+                                });
+                              },
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1151,12 +1173,22 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                       const SizedBox(height: 8),
                       InkWell(
                         onTap: () async {
-                          final tomorrow = DateTime.now().add(const Duration(days: 1));
+                          final now = DateTime.now();
+                          final today = DateTime(now.year, now.month, now.day);
+                          final tomorrow = DateTime(now.year, now.month, now.day + 1);
+                          final firstDate = _requestedCategory == 'Sick' ? today : tomorrow;
+                          final lastDate = today.add(const Duration(days: 90));
+
+                          final reqDateOnly = DateTime(_requestedDate.year, _requestedDate.month, _requestedDate.day);
+                          final initialDate = reqDateOnly.isBefore(firstDate)
+                              ? firstDate
+                              : (reqDateOnly.isAfter(lastDate) ? lastDate : reqDateOnly);
+
                           final picked = await showDatePicker(
                             context: context,
-                            initialDate: _requestedDate.isBefore(tomorrow) ? tomorrow : _requestedDate,
-                            firstDate: tomorrow,
-                            lastDate: DateTime.now().add(const Duration(days: 90)),
+                            initialDate: initialDate,
+                            firstDate: firstDate,
+                            lastDate: lastDate,
                             builder: (ctx, child) {
                               return Theme(
                                 data: Theme.of(ctx).copyWith(
@@ -1172,7 +1204,7 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                             },
                           );
                           if (picked != null) {
-                            setState(() => _requestedDate = picked);
+                            setState(() => _requestedDate = DateTime(picked.year, picked.month, picked.day));
                           }
                         },
                         borderRadius: BorderRadius.circular(8),
@@ -1231,35 +1263,56 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                         child: ElevatedButton.icon(
                           onPressed: _isSubmittingRequest
                               ? null
-                              : () {
-                                  final res = LeaveRequestService.submitRequest(
-                                    epCode: widget.employee.epCode,
-                                    nickname: widget.employee.nickname,
-                                    date: _requestedDate,
-                                    category: _requestedCategory,
-                                    note: _requestNoteCtrl.text,
-                                  );
+                              : () async {
+                                  setState(() => _isSubmittingRequest = true);
+                                  try {
+                                    final res = await LeaveRequestService.submitRequest(
+                                      epCode: widget.employee.epCode,
+                                      nickname: widget.employee.nickname,
+                                      date: _requestedDate,
+                                      category: _requestedCategory,
+                                      note: _requestNoteCtrl.text,
+                                    );
 
-                                  if (res.success) {
-                                    _requestNoteCtrl.clear();
-                                    setState(() {});
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('✅ ${L10n.requestSubmittedSuccess.get(sub)}'),
-                                        backgroundColor: const Color(0xFF10B981),
-                                      ),
-                                    );
-                                  } else {
-                                    String msg = res.error ?? '';
-                                    if (res.error == 'date_too_soon') msg = L10n.errDateTooSoon.get(sub);
-                                    if (res.error == 'duplicate_date') msg = L10n.errDuplicateDate.get(sub);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('⚠️ $msg'), backgroundColor: Colors.amber[800]),
-                                    );
+                                    if (res.success) {
+                                      _requestNoteCtrl.clear();
+                                      await LeaveRequestService.syncFromCloud(epCode: widget.employee.epCode);
+                                      if (mounted) {
+                                        setState(() {});
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('✅ ${L10n.requestSubmittedSuccess.get(sub)}'),
+                                            backgroundColor: const Color(0xFF10B981),
+                                          ),
+                                        );
+                                      }
+                                    } else {
+                                      String msg = res.error ?? '';
+                                      if (res.error == 'date_too_soon') msg = L10n.errDateTooSoon.get(sub);
+                                      if (res.error == 'duplicate_date') msg = L10n.errDuplicateDate.get(sub);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('⚠️ $msg'), backgroundColor: Colors.amber[800]),
+                                        );
+                                      }
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _isSubmittingRequest = false);
+                                    }
                                   }
                                 },
-                          icon: const Icon(Icons.send_rounded, size: 16),
-                          label: Text(L10n.submitRequestBtn.get(sub), style: const TextStyle(fontWeight: FontWeight.bold)),
+                          icon: _isSubmittingRequest
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.send_rounded, size: 16),
+                          label: Text(
+                            _isSubmittingRequest ? 'กำลังส่งข้อมูล...' : L10n.submitRequestBtn.get(sub),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0284C7),
                             foregroundColor: Colors.white,
@@ -1369,9 +1422,10 @@ class _EmployeePortalScreenState extends State<EmployeePortalScreen> {
                                   IconButton(
                                     icon: const Icon(Icons.cancel_outlined, size: 18, color: Color(0xFFEF4444)),
                                     tooltip: L10n.btnCancel.get(sub),
-                                    onPressed: () {
-                                      LeaveRequestService.cancelRequest(req.id);
-                                      setState(() {});
+                                    onPressed: () async {
+                                      await LeaveRequestService.cancelRequest(req.id);
+                                      await LeaveRequestService.syncFromCloud(epCode: widget.employee.epCode);
+                                      if (mounted) setState(() {});
                                     },
                                   ),
                                 ],
