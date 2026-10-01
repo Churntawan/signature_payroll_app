@@ -213,5 +213,55 @@ void main() {
       expect(recOct.basePay, equals(15000.0));
       expect(recOct.dailyRate, equals(500.0));
     });
+
+    test('Daily wage employee correctly scales dailyRate with period-adjusted salary (T.Tar case)', () async {
+      // T.Tar: Daily wage employee, adjusted to 15,000 in 2026-10
+      final tTar = Employee(
+        epCode: 'EP38',
+        nickname: 'T.Tar',
+        status: 'Active',
+        baseSalary: 15000.0,
+        payGroup: 'Date : 1',
+        stayOutside: 'Yes',
+        note: '[Wage:Daily] [DailyRate:500] [Housing:1000] [SalHist:2026-10:15000]',
+      );
+
+      // Verify salaryHistoryMap parsing
+      expect(tTar.salaryHistoryMap['2026-10'], equals(15000.0));
+
+      // In 2026-10: dailyRate should be 500.0
+      final rec202610 = PayrollEngine.calculateEmployeeRecord(employee: tTar, period: '2026-10');
+      expect(rec202610, isNotNull);
+      expect(rec202610!.dailyRate, equals(500.0));
+      expect(rec202610.baseSalary, equals(15000.0));
+
+      // Simulate attendance with 5 Day-offs in 30-day cycle -> 25 work days
+      final attendanceLogs = [
+        {'date': '2026-09-02', 'ep_code': 'EP38', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-09-09', 'ep_code': 'EP38', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-09-16', 'ep_code': 'EP38', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-09-23', 'ep_code': 'EP38', 'category': 'Day-off', 'units': 1.0},
+        {'date': '2026-09-30', 'ep_code': 'EP38', 'category': 'Day-off', 'units': 1.0},
+      ];
+      PayrollEngine.applyAttendance(rec202610, attendanceLogs);
+      expect(rec202610.workDays, equals(25));
+      expect(rec202610.basePay, equals(12500.0)); // 500 * 25
+      expect(rec202610.housingAllowance, equals(1000.0));
+      expect(rec202610.netPay, equals(13500.0)); // 12,500 + 1,000
+
+      // In 2026-09 (prior period): with history entry for 2026-09 = 12000
+      await SalaryHistoryService.addSalaryRecord(SalaryRecord(
+        id: 'sal_ttar_past',
+        epCode: 'EP38',
+        effectivePeriod: '2026-10',
+        baseSalary: 15000.0,
+        previousSalary: 12000.0,
+        createdAt: DateTime.now(),
+      ));
+      final rec202609 = PayrollEngine.calculateEmployeeRecord(employee: tTar, period: '2026-09');
+      expect(rec202609, isNotNull);
+      expect(rec202609!.baseSalary, equals(12000.0));
+      expect(rec202609.dailyRate, equals(400.0)); // 12000 / 30 = 400
+    });
   });
 }

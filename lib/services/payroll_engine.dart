@@ -113,9 +113,9 @@ class PayrollEngine {
     );
     final isDaily = employee.isDailyWage;
     final dailyRate = isDaily
-        ? (employee.note.contains('[DailyRate:')
-            ? employee.dailyWageRate
-            : (effectiveSalary >= 1000 ? (effectiveSalary / 30.0).roundToDouble() : effectiveSalary))
+        ? (effectiveSalary != employee.baseSalary
+            ? (effectiveSalary >= 1000 ? (effectiveSalary / 30.0).roundToDouble() : effectiveSalary)
+            : employee.dailyWageRate)
         : (effectiveSalary / 30.0);
     final totalCycleDays = cycle.endDate.difference(cycle.startDate).inDays + 1;
     int workedDays = 30;

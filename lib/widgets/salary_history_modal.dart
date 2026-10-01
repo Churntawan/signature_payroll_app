@@ -108,10 +108,17 @@ class _SalaryHistoryModalState extends State<SalaryHistoryModal> {
       defaultSalary: newSalary,
     );
 
-    if (latestSalary != widget.employee.baseSalary) {
-      final updatedEmp = widget.employee.copyWith(baseSalary: latestSalary);
-      await ApiService.saveEmployee(updatedEmp);
+    var updatedEmp = widget.employee.copyWith(baseSalary: latestSalary);
+    // Write [SalHist:period:newSalary] into note so it persists to Supabase Cloud
+    updatedEmp = updatedEmp.copyWithSalaryHistory(_selectedPeriod, newSalary);
+
+    // If Daily Wage, also update [DailyRate:xxx] so that dailyRate matches latestSalary / 30
+    if (updatedEmp.isDailyWage) {
+      final newDailyRate = (latestSalary / 30.0).roundToDouble();
+      updatedEmp = updatedEmp.copyWithWelfareSettings(dailyRate: newDailyRate);
     }
+
+    await ApiService.saveEmployee(updatedEmp);
 
     widget.onUpdated();
 
@@ -170,7 +177,17 @@ class _SalaryHistoryModalState extends State<SalaryHistoryModal> {
         defaultSalary: widget.employee.baseSalary,
       );
 
-      final updatedEmp = widget.employee.copyWith(baseSalary: latestSalary);
+      var updatedEmp = widget.employee.copyWith(baseSalary: latestSalary);
+      // Remove tag for this period
+      final cleanNote = updatedEmp.note
+          .replaceAll(RegExp(r'\[SalHist:' + RegExp.escape(rec.effectivePeriod) + r':[0-9.]+\]'), '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      updatedEmp = updatedEmp.copyWith(note: cleanNote);
+      if (updatedEmp.isDailyWage) {
+        final newDailyRate = (latestSalary / 30.0).roundToDouble();
+        updatedEmp = updatedEmp.copyWithWelfareSettings(dailyRate: newDailyRate);
+      }
       await ApiService.saveEmployee(updatedEmp);
 
       widget.onUpdated();

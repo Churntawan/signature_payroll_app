@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import '../models/salary_record.dart';
+import '../models/employee.dart';
 import 'session_storage.dart';
 import 'api_service.dart';
 
@@ -43,8 +44,8 @@ class SalaryHistoryService {
     changeNotifier.value++;
   }
 
-  /// Sync from Supabase Cloud (gracefully falls back if table doesn't exist)
-  static Future<void> syncFromCloud() async {
+  /// Sync from Supabase Cloud (checks salary_history table and parses employee notes)
+  static Future<void> syncFromCloud([List<Employee>? loadedEmployees]) async {
     initialize();
     try {
       final cloudRecords = await ApiService.fetchSalaryHistory();
@@ -57,9 +58,51 @@ class SalaryHistoryService {
           map[cr.id] = cr;
         }
         _cachedRecords = map.values.toList();
-        _saveToStorage();
       }
     } catch (_) {}
+
+    // Fallback/Enhancement: Parse [SalHist:YYYY-MM:amount] from all employee notes
+    try {
+      final emps = loadedEmployees ?? await ApiService.fetchEmployees();
+      if (emps != null && emps.isNotEmpty) {
+        for (final emp in emps) {
+          final hist = emp.salaryHistoryMap;
+          if (hist.isNotEmpty) {
+            for (final entry in hist.entries) {
+              final period = entry.key;
+              final sal = entry.value;
+              final recId = 'sal_${emp.epCode}_$period';
+              final idx = _cachedRecords.indexWhere(
+                (r) => r.epCode.toUpperCase() == emp.epCode.toUpperCase() && r.effectivePeriod == period,
+              );
+              if (idx == -1) {
+                _cachedRecords.add(SalaryRecord(
+                  id: recId,
+                  epCode: emp.epCode,
+                  effectivePeriod: period,
+                  baseSalary: sal,
+                  createdAt: DateTime.now(),
+                  createdByName: 'Cloud',
+                ));
+              } else if (_cachedRecords[idx].baseSalary != sal) {
+                _cachedRecords[idx] = SalaryRecord(
+                  id: _cachedRecords[idx].id,
+                  epCode: emp.epCode,
+                  effectivePeriod: period,
+                  baseSalary: sal,
+                  previousSalary: _cachedRecords[idx].previousSalary,
+                  reason: _cachedRecords[idx].reason,
+                  createdAt: _cachedRecords[idx].createdAt,
+                  createdByName: _cachedRecords[idx].createdByName,
+                );
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    _saveToStorage();
   }
 
   /// Check if an employee has any salary adjustment history

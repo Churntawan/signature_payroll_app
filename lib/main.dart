@@ -120,6 +120,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
     final dbEmployees = await ApiService.fetchEmployees();
     if (dbEmployees != null && dbEmployees.isNotEmpty) {
       setState(() => _employees = dbEmployees);
+      SalaryHistoryService.syncFromCloud(dbEmployees).ignore();
     }
 
     if (_employees.isNotEmpty) {
@@ -148,7 +149,10 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       final dbEmployees = await ApiService.fetchEmployees();
       if (dbEmployees != null && dbEmployees.isNotEmpty && mounted) {
         setState(() => _employees = dbEmployees);
+        await SalaryHistoryService.syncFromCloud(dbEmployees);
       }
+    } else {
+      await SalaryHistoryService.syncFromCloud(_employees);
     }
 
     // Fetch real attendance and adjustments for this period

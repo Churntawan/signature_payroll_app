@@ -104,6 +104,36 @@ class Employee {
     return copyWith(note: withPreferredDayOffs(days));
   }
 
+  /// Get salary history map parsed from note [SalHist:YYYY-MM:amount]
+  Map<String, double> get salaryHistoryMap {
+    if (note.isEmpty) return {};
+    final map = <String, double>{};
+    final matches = RegExp(r'\[SalHist:([0-9]{4}-[0-9]{2}):([0-9.]+)\]').allMatches(note);
+    for (final m in matches) {
+      final p = m.group(1);
+      final s = double.tryParse(m.group(2) ?? '');
+      if (p != null && s != null) {
+        map[p] = s;
+      }
+    }
+    return map;
+  }
+
+  /// Create a new note string with updated period salary history tag
+  String withSalaryHistory(String period, double newSalary) {
+    var clean = note
+        .replaceAll(RegExp(r'\[SalHist:' + RegExp.escape(period) + r':[0-9.]+\]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final tag = '[SalHist:$period:${newSalary.toStringAsFixed(0)}]';
+    return clean.isEmpty ? tag : '$clean $tag';
+  }
+
+  /// Return a new Employee instance with updated salary history
+  Employee copyWithSalaryHistory(String period, double newSalary) {
+    return copyWith(note: withSalaryHistory(period, newSalary));
+  }
+
   /// Create a new note string with updated wage type, daily rate, and housing allowance tags
   String withWelfareSettings({String? wageType, double? housingAllowance, double? dailyRate}) {
     var clean = note
