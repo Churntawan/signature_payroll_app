@@ -22,6 +22,7 @@ import 'widgets/two_month_calendar_planner.dart';
 import 'services/salary_history_service.dart';
 import 'widgets/salary_history_modal.dart';
 import 'widgets/manual_payroll_sheet.dart';
+import 'widgets/manual_payslip_creator.dart';
 import 'services/manual_payroll_service.dart';
 
 void main() {
@@ -87,6 +88,8 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
   AuthSession? _currentSession;
   bool _isCheckingAuth = false;
   bool _isManualSheetMode = false;
+  bool _isManualPayslipMode = false;
+  PayrollRecord? _editingManualRecord;
 
   @override
   void initState() {
@@ -1765,12 +1768,69 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
       record = null;
     }
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 20, vertical: isMobile ? 12 : 20),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 680),
-          child: Column(
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment<bool>(
+                      value: false,
+                      label: Text('📄 สลิปตามระบบ (Standard)'),
+                      icon: Icon(Icons.receipt_long, size: 16),
+                    ),
+                    ButtonSegment<bool>(
+                      value: true,
+                      label: Text('✍️ ออกสลิปแมนนวล (Manual Creator)'),
+                      icon: Icon(Icons.edit_document, size: 16),
+                    ),
+                  ],
+                  selected: {_isManualPayslipMode},
+                  onSelectionChanged: (val) {
+                    setState(() {
+                      _isManualPayslipMode = val.first;
+                      if (!_isManualPayslipMode) {
+                        _editingManualRecord = null;
+                      }
+                    });
+                  },
+                  style: SegmentedButton.styleFrom(
+                    selectedBackgroundColor: const Color(0xFFE0F2FE),
+                    selectedForegroundColor: const Color(0xFF0369A1),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _isManualPayslipMode
+              ? ManualPayslipCreator(
+                  period: _selectedPeriod,
+                  employees: _employees,
+                  initialRecord: _editingManualRecord ?? record,
+                  onSaveToRecords: (savedRec) {
+                    setState(() {
+                      _payrollRecords[savedRec.epCode] = savedRec;
+                      _selectedPayslipEp = savedRec.epCode;
+                    });
+                    ManualPayrollService.saveManualRecords(
+                      period: savedRec.period,
+                      records: _payrollRecords.values.toList(),
+                    ).ignore();
+                  },
+                )
+              : SingleChildScrollView(
+                  padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 20, vertical: isMobile ? 12 : 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 680),
+                      child: Column(
             children: [
               Card(
                 elevation: 1,
@@ -1966,30 +2026,35 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                 : Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Employee: ${record.nickname} (${record.epCode})',
-                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Pay Group: ${record.payGroup}',
-                                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                                          ),
-                                        ],
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Employee:  ()',
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'Pay Group: ',
+                                              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
                                       ),
+                                      const SizedBox(width: 8),
                                       Column(
                                         crossAxisAlignment: CrossAxisAlignment.end,
                                         children: [
                                           Text(
-                                            'Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}',
+                                            'Cycle:  - ',
                                             style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            'Pay Date: ${df.format(record.payDate)}',
+                                            'Pay Date: ',
                                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
                                           ),
                                         ],
@@ -2151,6 +2216,22 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                       label: const Text('Copy for LINE', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
                     OutlinedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _editingManualRecord = record;
+                          _isManualPayslipMode = true;
+                        });
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF4F46E5),
+                        side: const BorderSide(color: Color(0xFF4F46E5)),
+                        padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 18, vertical: isMobile ? 12 : 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.edit_document, size: 18),
+                      label: const Text('✍️ แก้ไขสลิปนี้แมนนวล'),
+                    ),
+                    OutlinedButton.icon(
                       onPressed: () => _showEditAdjustmentsDialog(record!),
                       style: OutlinedButton.styleFrom(
                         padding: EdgeInsets.symmetric(horizontal: isMobile ? 14 : 18, vertical: isMobile ? 12 : 14),
@@ -2166,6 +2247,9 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           ),
         ),
       ),
+    ),
+        ),
+      ],
     );
   }
 
