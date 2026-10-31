@@ -21,6 +21,8 @@ import 'widgets/login_screen.dart';
 import 'widgets/two_month_calendar_planner.dart';
 import 'services/salary_history_service.dart';
 import 'widgets/salary_history_modal.dart';
+import 'widgets/manual_payroll_sheet.dart';
+import 'services/manual_payroll_service.dart';
 
 void main() {
   runApp(const SignaturePayrollApp());
@@ -84,6 +86,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
 
   AuthSession? _currentSession;
   bool _isCheckingAuth = false;
+  bool _isManualSheetMode = false;
 
   @override
   void initState() {
@@ -238,6 +241,44 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
         newRecords[emp.epCode] = rec;
       }
     }
+
+    // Load manual overrides for this period if any were saved
+    final savedManual = ManualPayrollService.loadManualRecords(_selectedPeriod);
+    if (savedManual != null && savedManual.isNotEmpty) {
+      for (final item in savedManual) {
+        final ep = item['ep_code']?.toString() ?? '';
+        if (newRecords.containsKey(ep)) {
+          final rec = newRecords[ep]!;
+          rec.workDays = (item['work_days'] as num?)?.toInt() ?? rec.workDays;
+          rec.dayOff = (item['day_off'] as num?)?.toInt() ?? rec.dayOff;
+          rec.sickLeave = (item['sick_leave'] as num?)?.toInt() ?? rec.sickLeave;
+          rec.halfDays = (item['half_days'] as num?)?.toInt() ?? rec.halfDays;
+          rec.otDays = (item['ot_days'] as num?)?.toInt() ?? rec.otDays;
+          rec.housingAllowance = (item['housing_allowance'] as num?)?.toDouble() ?? rec.housingAllowance;
+          rec.housingAllowanceNote = item['housing_allowance_note']?.toString() ?? rec.housingAllowanceNote;
+          rec.overtimePay = (item['overtime_pay'] as num?)?.toDouble() ?? rec.overtimePay;
+          rec.bonusPay = (item['bonus_pay'] as num?)?.toDouble() ?? rec.bonusPay;
+          rec.otherExtra = (item['other_extra'] as num?)?.toDouble() ?? rec.otherExtra;
+          rec.extraNote = item['extra_note']?.toString() ?? rec.extraNote;
+          rec.advanceDeduction = (item['advance_deduction'] as num?)?.toDouble() ?? rec.advanceDeduction;
+          rec.workPermitDeduction = (item['work_permit_deduction'] as num?)?.toDouble() ?? rec.workPermitDeduction;
+          rec.otherDeduction = (item['other_deduction'] as num?)?.toDouble() ?? rec.otherDeduction;
+          rec.deductionNote = item['deduction_note']?.toString() ?? rec.deductionNote;
+          rec.excessDayOffDays = (item['excess_day_off_days'] as num?)?.toDouble() ?? rec.excessDayOffDays;
+          rec.excessDayOffDeduction = (item['excess_day_off_deduction'] as num?)?.toDouble() ?? rec.excessDayOffDeduction;
+          if (item['base_salary'] != null) {
+            final sal = (item['base_salary'] as num).toDouble();
+            final dRate = (sal / 30.0).roundToDouble();
+            if (rec.wageType == 'Daily') {
+              rec.basePay = (dRate * rec.workDays).roundToDouble();
+            } else {
+              rec.basePay = sal;
+            }
+          }
+        }
+      }
+    }
+
     setState(() {
       _payrollRecords = newRecords;
       if (_selectedPayslipEp == null || !newRecords.containsKey(_selectedPayslipEp)) {
@@ -790,6 +831,39 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Mode switcher toggle: Auto Cards vs Manual Sheet
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment<bool>(
+                            value: false,
+                            label: Text('📊 คำนวณอัตโนมัติ (Cards)'),
+                            icon: Icon(Icons.auto_graph, size: 16),
+                          ),
+                          ButtonSegment<bool>(
+                            value: true,
+                            label: Text('📝 ตารางคีย์แมนนวล (Manual Sheet)'),
+                            icon: Icon(Icons.table_chart, size: 16),
+                          ),
+                        ],
+                        selected: {_isManualSheetMode},
+                        onSelectionChanged: (val) {
+                          setState(() => _isManualSheetMode = val.first);
+                        },
+                        style: SegmentedButton.styleFrom(
+                          selectedBackgroundColor: const Color(0xFFE0F2FE),
+                          selectedForegroundColor: const Color(0xFF0369A1),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               if (isMobile) ...[
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -892,6 +966,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ],
                 ),
               ],
+              if (!_isManualSheetMode) ...[
               // Prominent Auto-Schedule Day-off Banner in Tab 1
               Container(
                 margin: const EdgeInsets.only(top: 10),
@@ -949,9 +1024,43 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   ],
                 ),
               ),
+              ],
             ],
           ),
         ),
+        if (_isManualSheetMode)
+          Expanded(
+            child: ManualPayrollSheet(
+              period: _selectedPeriod,
+              employees: _employees,
+              records: _payrollRecords,
+              selectedGroupFilter: _selectedGroupFilter,
+              onRecordsUpdated: (updated) {
+                setState(() => _payrollRecords = updated);
+              },
+              onExportCsv: _exportBankSummaryCsv,
+              onPreloadAutoCalculated: () async {
+                ManualPayrollService.clearManualRecords(_selectedPeriod);
+                await _fetchDataAndRecalculate();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('⚡ โหลดตัวเลขจากการคำนวณอัตโนมัติสำเร็จ'),
+                      backgroundColor: Color(0xFF4F46E5),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              },
+              onViewPayslip: (epCode) {
+                setState(() {
+                  _selectedPayslipEp = epCode;
+                  _currentTab = 3;
+                });
+              },
+            ),
+          )
+        else ...[
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: isMobile
@@ -1236,6 +1345,7 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                   },
                 ),
         ),
+        ],
       ],
     );
   }

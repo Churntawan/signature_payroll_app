@@ -9,8 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:signature_payroll_app/main.dart';
+import 'package:signature_payroll_app/services/auth_service.dart';
+import 'package:signature_payroll_app/widgets/manual_payroll_sheet.dart';
 
 void main() {
+  setUp(() {
+    AuthService.clearSession();
+  });
+
   testWidgets('SignaturePayrollApp smoke test: shows login screen and logs in as admin', (WidgetTester tester) async {
     await tester.pumpWidget(const SignaturePayrollApp());
     await tester.pumpAndSettle();
@@ -26,5 +32,36 @@ void main() {
 
     // After login, admin dashboard appears
     expect(find.text('SIGNATURE PAYROLL'), findsWidgets);
+  });
+
+  testWidgets('SignaturePayrollApp can toggle to Manual Sheet mode', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(const SignaturePayrollApp());
+    await tester.pumpAndSettle();
+
+    // Login if needed
+    final tf = find.byType(TextField);
+    if (tf.evaluate().isNotEmpty) {
+      await tester.enterText(tf.first, 'Churn2543');
+      await tester.tap(find.byType(ElevatedButton));
+      await tester.pumpAndSettle();
+    }
+
+    // Check mode switcher exists
+    expect(find.text('📊 คำนวณอัตโนมัติ (Cards)'), findsOneWidget);
+    expect(find.text('📝 ตารางคีย์แมนนวล (Manual Sheet)'), findsOneWidget);
+
+    // Tap to switch to Manual Sheet mode
+    await tester.tap(find.text('📝 ตารางคีย์แมนนวล (Manual Sheet)'));
+    await tester.pumpAndSettle();
+
+    // ManualPayrollSheet widget is present!
+    expect(find.byType(ManualPayrollSheet), findsOneWidget);
+    expect(find.text('💾 บันทึกทั้งหมด'), findsOneWidget);
+    expect(find.text('ดึงค่าคำนวณอัตโนมัติ'), findsOneWidget);
+    expect(find.text('เพิ่มแถวพนักงาน'), findsOneWidget);
   });
 }
