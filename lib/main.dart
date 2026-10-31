@@ -2031,13 +2031,13 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'Employee:  ()',
+                                              'Employee: ${record.nickname} (${record.epCode})',
                                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              'Pay Group: ',
+                                              'Pay Group: ${record.payGroup}',
                                               style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -2049,12 +2049,12 @@ class _PayrollMainScreenState extends State<PayrollMainScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.end,
                                         children: [
                                           Text(
-                                            'Cycle:  - ',
+                                            'Cycle: ${df.format(record.cycleStartDate)} - ${df.format(record.cycleEndDate)}',
                                             style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            'Pay Date: ',
+                                            'Pay Date: ${df.format(record.payDate)}',
                                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0284C7)),
                                           ),
                                         ],

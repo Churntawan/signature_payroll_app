@@ -38,15 +38,23 @@ void main() {
       await tester.pumpAndSettle();
 
       // Check header and form components
-      expect(find.text('✍️ ระบบออกสลิปเงินเดือนแบบแมนนวล (Manual PaySlip Creator)'), findsOneWidget);
       expect(find.text('SIGNATURE PAYROLL'), findsOneWidget);
       expect(find.text('PAYSLIP / SALARY STATEMENT'), findsOneWidget);
       expect(find.text('NET PAYOUT'), findsOneWidget);
+      expect(find.text('💰 1. ตัวเลข & ยอดเงิน'), findsOneWidget);
+      expect(find.text('✏️ 2. ปรับแต่งข้อความบนสลิป'), findsOneWidget);
 
       // Verify buttons exist
       expect(find.text('คัดลอกส่ง LINE'), findsOneWidget);
       expect(find.text('📸 เซฟเป็นรูปภาพ (PNG)'), findsOneWidget);
       expect(find.text('💾 บันทึกเข้าระบบ'), findsOneWidget);
+
+      // Tap tab 2 to edit text
+      await tester.tap(find.text('✏️ 2. ปรับแต่งข้อความบนสลิป'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1. ส่วนหัวสลิป (Header)'), findsOneWidget);
+      expect(find.text('รีเซ็ตข้อความ'), findsOneWidget);
 
       // Tap Save button
       await tester.tap(find.text('💾 บันทึกเข้าระบบ'));
